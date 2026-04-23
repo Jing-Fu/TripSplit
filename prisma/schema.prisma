@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Trip {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  destination String?
+  startDate   DateTime
+  endDate     DateTime?
+  currency    String   @default("TWD")
+  inviteCode  String   @unique
+  coverEmoji  String   @default("✈️")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members  Member[]
+  expenses Expense[]
+}
+
+model Member {
+  id        String   @id @default(cuid())
+  name      String
+  tripId    String
+  createdAt DateTime @default(now())
+
+  trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  payments Expense[] @relation("PaidBy")
+  splits   Split[]
+
+  @@unique([tripId, name])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  amount      Float
+  currency    String   @default("TWD")
+  exchangeRate Float   @default(1.0)
+  category    String
+  description String
+  note        String?
+  date        DateTime
+  receiptUrl  String?
+  splitType   String   @default("equal")
+  paidById    String
+  tripId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  paidBy Member  @relation("PaidBy", fields: [paidById], references: [id], onDelete: Cascade)
+  trip   Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  splits Split[]
+}
+
+model Split {
+  id        String @id @default(cuid())
+  amount    Float
+  memberId  String
+  expenseId String
+
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, expenseId])
+}
