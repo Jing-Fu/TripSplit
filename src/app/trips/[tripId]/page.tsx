@@ -36,6 +36,25 @@ type Trip = {
   expenses: Expense[];
 };
 
+type Settlement = { from: string; to: string; amount: number };
+
+type SettlementBreakdownItem = {
+  expenseId: string;
+  description: string;
+  category: string;
+  date: string;
+  amount: number;
+  originalAmount: number;
+  originalCurrency: string;
+};
+
+type PairwiseBreakdown = {
+  from: string;
+  to: string;
+  amount: number;
+  items: SettlementBreakdownItem[];
+};
+
 type Tab = "expenses" | "add" | "settle" | "stats";
 
 const defaultExpenseForm = {
@@ -159,7 +178,7 @@ export default function TripDetailPage() {
     router.push("/");
   };
 
-  const calculateSettlement = () => {
+  const calculateSettlement = (): Settlement[] => {
     if (!trip) return [];
 
     const balances: Record<string, number> = {};
@@ -191,7 +210,7 @@ export default function TripDetailPage() {
     debtors.sort((a, b) => b.amount - a.amount);
     creditors.sort((a, b) => b.amount - a.amount);
 
-    const settlements: { from: string; to: string; amount: number }[] = [];
+    const settlements: Settlement[] = [];
     let di = 0,
       ci = 0;
 
@@ -211,6 +230,61 @@ export default function TripDetailPage() {
     }
 
     return settlements;
+  };
+
+  const calculatePairwiseBreakdown = (): PairwiseBreakdown[] => {
+    if (!trip) return [];
+
+    const breakdownMap = new Map<string, PairwiseBreakdown>();
+
+    trip.expenses.forEach((expense) => {
+      expense.splits.forEach((split) => {
+        if (split.member.id === expense.paidBy.id) {
+          return;
+        }
+
+        const amount = Math.round(split.amount * expense.exchangeRate * 100) / 100;
+
+        if (amount <= 0) {
+          return;
+        }
+
+        const key = `${split.member.id}:${expense.paidBy.id}`;
+        const existing = breakdownMap.get(key);
+
+        const item: SettlementBreakdownItem = {
+          expenseId: expense.id,
+          description: expense.description,
+          category: expense.category,
+          date: expense.date,
+          amount,
+          originalAmount: split.amount,
+          originalCurrency: expense.currency,
+        };
+
+        if (existing) {
+          existing.amount = Math.round((existing.amount + amount) * 100) / 100;
+          existing.items.push(item);
+          return;
+        }
+
+        breakdownMap.set(key, {
+          from: split.member.name,
+          to: expense.paidBy.name,
+          amount,
+          items: [item],
+        });
+      });
+    });
+
+    return Array.from(breakdownMap.values())
+      .map((entry) => ({
+        ...entry,
+        items: entry.items.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+        ),
+      }))
+      .sort((a, b) => b.amount - a.amount);
   };
 
   const getCategoryInfo = (value: string) =>
@@ -397,10 +471,12 @@ export default function TripDetailPage() {
           {tab === "settle" && (
             <SettlementView
               settlements={calculateSettlement()}
+              pairwiseBreakdowns={calculatePairwiseBreakdown()}
               currency={trip.currency}
               totalExpenses={totalExpenses}
               members={trip.members}
               expenses={trip.expenses}
+              getCategoryInfo={getCategoryInfo}
             />
           )}
           {tab === "stats" && (
@@ -841,18 +917,30 @@ function AddExpenseForm({
 
 function SettlementView({
   settlements,
+  pairwiseBreakdowns,
   currency,
   totalExpenses,
   members,
   expenses,
+  getCategoryInfo,
 }: {
-  settlements: { from: string; to: string; amount: number }[];
+  settlements: Settlement[];
+  pairwiseBreakdowns: PairwiseBreakdown[];
   currency: string;
   totalExpenses: number;
   members: Member[];
   expenses: Expense[];
+  getCategoryInfo: (v: string) => { label: string; emoji: string };
 }) {
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
+  const [expandedBreakdowns, setExpandedBreakdowns] = useState<Record<string, boolean>>({});
+
+  const toggleBreakdown = (key: string) => {
+    setExpandedBreakdowns((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   return (
     <div className="space-y-4">
@@ -898,6 +986,89 @@ function SettlementView({
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {pairwiseBreakdowns.length > 0 && (
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h3 className="text-sm font-medium text-gray-500 mb-1">
+            🧾 按品項拆分的付款明細
+          </h3>
+          <p className="text-xs text-gray-400 mb-4">
+            這裡保留原始消費的付款對象與品項，方便核對每一筆錢是為了什麼支出。
+          </p>
+          <div className="space-y-4">
+            {pairwiseBreakdowns.map((breakdown) => {
+              const breakdownKey = `${breakdown.from}-${breakdown.to}`;
+              const isExpanded = expandedBreakdowns[breakdownKey] ?? false;
+
+              return (
+                <div
+                  key={breakdownKey}
+                  className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleBreakdown(breakdownKey)}
+                    className="flex w-full flex-col gap-2 text-left sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <span className="font-medium">{breakdown.from}</span>
+                        <span className="text-gray-300">→</span>
+                        <span className="font-medium">{breakdown.to}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-400">
+                        {breakdown.items.length} 筆品項 {isExpanded ? "· 點擊收合" : "· 點擊展開"}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 sm:block sm:text-right">
+                      <p className="text-sm font-semibold text-primary-600">
+                        合計 {formatCurrency(breakdown.amount, currency)}
+                      </p>
+                      <span className="text-sm text-gray-400" aria-hidden="true">
+                        {isExpanded ? "▴" : "▾"}
+                      </span>
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="mt-3 space-y-2">
+                      {breakdown.items.map((item) => {
+                        const category = getCategoryInfo(item.category);
+
+                        return (
+                          <div
+                            key={`${breakdown.from}-${breakdown.to}-${item.expenseId}`}
+                            className="flex items-start justify-between gap-3 rounded-xl bg-white px-3 py-2"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-800">
+                                {category.emoji} {item.description}
+                              </p>
+                              <p className="mt-0.5 text-xs text-gray-400">
+                                {category.label} · {formatDate(item.date)}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-semibold text-gray-700">
+                                {formatCurrency(item.amount, currency)}
+                              </p>
+                              {item.originalCurrency !== currency && (
+                                <p className="text-xs text-gray-400">
+                                  原始分攤 {formatCurrency(item.originalAmount, item.originalCurrency)}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
