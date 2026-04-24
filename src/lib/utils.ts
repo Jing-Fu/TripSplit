@@ -33,6 +33,24 @@ export function getCategoryInfo(value: string) {
   return (
     EXPENSE_CATEGORIES.find(
       (c: { value: string }) => c.value === value
-    ) ?? { value: "other", label: "其他", emoji: "📝" }
+      ) ?? { value: "other", label: "其他", emoji: "📝" }
   );
+}
+
+export function getAvailableName(
+  preferredName: string,
+  existingNames: string[]
+) {
+  const baseName = preferredName.trim() || "旅伴";
+
+  if (!existingNames.includes(baseName)) {
+    return baseName;
+  }
+
+  let suffix = 2;
+  while (existingNames.includes(`${baseName} ${suffix}`)) {
+    suffix += 1;
+  }
+
+  return `${baseName} ${suffix}`;
 }

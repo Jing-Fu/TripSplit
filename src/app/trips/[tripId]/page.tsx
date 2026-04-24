@@ -1,27 +1,58 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { EXPENSE_CATEGORIES, CURRENCIES, SPLIT_TYPES } from "@/lib/constants";
+import { CURRENCIES, EXPENSE_CATEGORIES, SPLIT_TYPES } from "@/lib/constants";
+import {
+  calculatePairwiseBreakdown,
+  calculatePersonSettlementGroups,
+  calculateSuggestedSettlements,
+  exportSettlementSummaryAsText,
+  type PairwiseBreakdown,
+  type RecordedSettlementPayment,
+  type SettlementExpense,
+  type SuggestedSettlement,
+} from "@/lib/settlement";
 import { formatCurrency, formatDate, formatDateForInput } from "@/lib/utils";
 
-type Member = { id: string; name: string };
-type Split = { id: string; amount: number; member: Member };
-type Expense = {
+type User = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+type Member = {
+  id: string;
+  name: string;
+  userId: string | null;
+  user?: User | null;
+};
+
+type Split = {
   id: string;
   amount: number;
-  currency: string;
-  exchangeRate: number;
-  category: string;
-  description: string;
+  member: Member;
+};
+
+type Expense = SettlementExpense & {
   note: string | null;
-  date: string;
   receiptUrl: string | null;
   splitType: string;
-  paidBy: Member;
-  splits: Split[];
+  createdBy: User | null;
 };
+
+type Payment = RecordedSettlementPayment & {
+  settledBy: User;
+};
+
+type TripPermissions = {
+  isOwner: boolean;
+  canManageMembers: boolean;
+  canDeleteTrip: boolean;
+  canAddExpense: boolean;
+};
+
 type Trip = {
   id: string;
   name: string;
@@ -32,43 +63,224 @@ type Trip = {
   currency: string;
   coverEmoji: string;
   inviteCode: string;
+  owner: User | null;
   members: Member[];
   expenses: Expense[];
+  payments: Payment[];
+  permissions: TripPermissions;
+  currentUser: User;
+  currentMemberId: string | null;
 };
 
-type Settlement = { from: string; to: string; amount: number };
+type ActivityLog = {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  details: string | null;
+  createdAt: string;
+  user: { id: string; name: string } | null;
+};
 
-type SettlementBreakdownItem = {
-  expenseId: string;
-  description: string;
+type Tab = "expenses" | "add" | "settle" | "stats" | "activity";
+
+type ExpenseFilters = {
+  keyword: string;
   category: string;
-  date: string;
-  amount: number;
-  originalAmount: number;
-  originalCurrency: string;
+  paidById: string;
+  dateFrom: string;
+  dateTo: string;
 };
 
-type PairwiseBreakdown = {
-  from: string;
-  to: string;
-  amount: number;
-  items: SettlementBreakdownItem[];
+const EMPTY_FILTERS: ExpenseFilters = {
+  keyword: "",
+  category: "",
+  paidById: "",
+  dateFrom: "",
+  dateTo: "",
 };
 
-type Tab = "expenses" | "add" | "settle" | "stats";
-
-const defaultExpenseForm = {
+const createDefaultExpenseForm = (currency = "TWD", paidById = "") => ({
   amount: "",
-  currency: "TWD",
+  currency,
   category: "food",
   description: "",
   note: "",
   date: formatDateForInput(new Date()),
-  paidById: "",
+  paidById,
   splitType: "equal",
   receiptUrl: "",
   exchangeRate: "1",
-};
+});
+
+type ExpenseFormState = ReturnType<typeof createDefaultExpenseForm>;
+
+function getCategoryInfo(value: string) {
+  return (
+    EXPENSE_CATEGORIES.find((category) => category.value === value) ?? {
+      value: "other",
+      label: "其他",
+      emoji: "📝",
+    }
+  );
+}
+
+function buildSplits(
+  form: ExpenseFormState,
+  members: Member[],
+  customSplits: Record<string, string>
+) {
+  const amount = parseFloat(form.amount || "0");
+
+  if (form.splitType === "equal") {
+    const perPerson = members.length > 0 ? amount / members.length : 0;
+    return members.map((member) => ({
+      memberId: member.id,
+      amount: Math.round(perPerson * 100) / 100,
+    }));
+  }
+
+  if (form.splitType === "payer_only") {
+    return [{ memberId: form.paidById, amount }];
+  }
+
+  if (form.splitType === "percentage") {
+    return members
+      .filter((member) => customSplits[member.id] && parseFloat(customSplits[member.id]) > 0)
+      .map((member) => ({
+        memberId: member.id,
+        amount: Math.round(amount * (parseFloat(customSplits[member.id]) / 100) * 100) / 100,
+      }));
+  }
+
+  return members
+    .filter((member) => customSplits[member.id] && parseFloat(customSplits[member.id]) > 0)
+    .map((member) => ({
+      memberId: member.id,
+      amount: parseFloat(customSplits[member.id]),
+    }));
+}
+
+function getActivityLabel(action: string): string {
+  const map: Record<string, string> = {
+    expense_created: "新增消費",
+    expense_updated: "修改消費",
+    expense_deleted: "刪除消費",
+    payment_marked: "標記付款",
+    payment_updated: "更新付款狀態",
+    member_added: "新增成員",
+    member_removed: "移除成員",
+  };
+  return map[action] || action;
+}
+
+function getActivityEmoji(action: string): string {
+  const map: Record<string, string> = {
+    expense_created: "➕",
+    expense_updated: "✏️",
+    expense_deleted: "🗑️",
+    payment_marked: "💸",
+    payment_updated: "🔄",
+    member_added: "👤",
+    member_removed: "👋",
+  };
+  return map[action] || "📋";
+}
+
+function safeFetch(
+  input: RequestInfo,
+  init?: RequestInit
+): Promise<Response> {
+  return fetch(input, init).catch(() => {
+    return new Response(JSON.stringify({ error: "網路連線失敗，請檢查網路後重試" }), {
+      status: 0,
+      headers: { "Content-Type": "application/json" },
+    });
+  });
+}
+
+function buildTripExportJSON(trip: Trip) {
+  return {
+    exportedAt: new Date().toISOString(),
+    trip: {
+      name: trip.name,
+      description: trip.description,
+      destination: trip.destination,
+      startDate: trip.startDate,
+      endDate: trip.endDate,
+      currency: trip.currency,
+      coverEmoji: trip.coverEmoji,
+    },
+    members: trip.members.map((m) => ({ name: m.name })),
+    expenses: trip.expenses.map((e) => ({
+      description: e.description,
+      amount: e.amount,
+      currency: e.currency,
+      exchangeRate: e.exchangeRate,
+      category: e.category,
+      date: e.date,
+      paidBy: e.paidBy.name,
+      splitType: e.splitType,
+      note: (e as Expense).note,
+      splits: e.splits.map((s) => ({
+        member: s.member.name,
+        amount: s.amount,
+      })),
+    })),
+    payments: trip.payments.map((p) => ({
+      from: p.fromMember.name,
+      to: p.toMember.name,
+      amount: p.amount,
+      currency: p.currency,
+      status: p.status,
+      settledAt: p.settledAt,
+      note: p.note,
+    })),
+  };
+}
+
+function buildTripExportCSV(trip: Trip) {
+  const header = [
+    "日期",
+    "說明",
+    "金額",
+    "幣別",
+    "匯率",
+    "等值金額",
+    "類別",
+    "付款人",
+    "分帳方式",
+    "備註",
+  ].join(",");
+
+  const rows = trip.expenses.map((e) => {
+    const cat = getCategoryInfo(e.category);
+    return [
+      formatDateForInput(e.date),
+      `"${e.description.replace(/"/g, '""')}"`,
+      e.amount,
+      e.currency,
+      e.exchangeRate,
+      (e.amount * e.exchangeRate).toFixed(2),
+      cat.label,
+      e.paidBy.name,
+      e.splitType,
+      `"${((e as Expense).note || "").replace(/"/g, '""')}"`,
+    ].join(",");
+  });
+
+  return "\uFEFF" + [header, ...rows].join("\n");
+}
+
+function downloadFile(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function TripDetailPage() {
   const params = useParams();
@@ -77,78 +289,211 @@ export default function TripDetailPage() {
 
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("expenses");
+  const [showInvite, setShowInvite] = useState(false);
   const [newMember, setNewMember] = useState("");
-  const [expenseForm, setExpenseForm] = useState(defaultExpenseForm);
+  const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(createDefaultExpenseForm());
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [showInvite, setShowInvite] = useState(false);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expandedBreakdowns, setExpandedBreakdowns] = useState<Record<string, boolean>>({});
+  const [processingPayment, setProcessingPayment] = useState<string | null>(null);
+
+  const [filters, setFilters] = useState<ExpenseFilters>(EMPTY_FILTERS);
+  const [showFilters, setShowFilters] = useState(false);
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+  const errorTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+  const showError = useCallback((msg: string) => {
+    setError(msg);
+    if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+    errorTimeoutRef.current = setTimeout(() => setError(""), 8000);
+  }, []);
 
   const fetchTrip = useCallback(async () => {
-    const res = await fetch(`/api/trips/${tripId}`);
-    if (res.ok) {
-      const data = await res.json();
-      setTrip(data);
-      setExpenseForm((prev) => {
-        if (!prev.paidById && data.members.length > 0) {
-          return { ...prev, paidById: data.members[0].id, currency: data.currency };
-        }
-        return prev;
-      });
+    setLoading(true);
+    setError("");
+    const res = await safeFetch(`/api/trips/${tripId}`);
+
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      setLoading(false);
+      return;
     }
+
+    if (res.status === 401) {
+      router.replace("/login");
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "載入失敗" }));
+      showError(data.error || "載入失敗");
+      setLoading(false);
+      return;
+    }
+
+    const data = await res.json();
+    setTrip(data);
+    setExpenseForm((prev) => {
+      if (!prev.paidById && data.currentMemberId) {
+        return createDefaultExpenseForm(data.currency, data.currentMemberId);
+      }
+
+      return prev;
+    });
     setLoading(false);
-  }, [tripId]);
+  }, [router, tripId, showError]);
 
   useEffect(() => {
     fetchTrip();
   }, [fetchTrip]);
 
+  const fetchActivities = useCallback(async () => {
+    setActivitiesLoading(true);
+    const res = await safeFetch(`/api/trips/${tripId}/activities`);
+
+    if (res.ok) {
+      const data = await res.json();
+      setActivities(data);
+    }
+    setActivitiesLoading(false);
+  }, [tripId]);
+
+  useEffect(() => {
+    if (tab === "activity") {
+      fetchActivities();
+    }
+  }, [tab, fetchActivities]);
+
+  const suggestedSettlements = useMemo(() => {
+    if (!trip) return [];
+    return calculateSuggestedSettlements(trip.members, trip.expenses, trip.payments);
+  }, [trip]);
+
+  const pairwiseBreakdowns = useMemo(() => {
+    if (!trip) return [];
+    return calculatePairwiseBreakdown(trip.expenses);
+  }, [trip]);
+
+  const personSettlementGroups = useMemo(() => {
+    if (!trip) return [];
+    return calculatePersonSettlementGroups(trip.members, pairwiseBreakdowns);
+  }, [trip, pairwiseBreakdowns]);
+
+  const totalExpenses =
+    trip?.expenses.reduce((sum, expense) => sum + expense.amount * expense.exchangeRate, 0) ?? 0;
+
+  const filteredExpenses = useMemo(() => {
+    if (!trip) return [];
+    let result = trip.expenses;
+
+    if (filters.keyword) {
+      const kw = filters.keyword.toLowerCase();
+      result = result.filter(
+        (e) =>
+          e.description.toLowerCase().includes(kw) ||
+          (e as Expense).note?.toLowerCase().includes(kw)
+      );
+    }
+
+    if (filters.category) {
+      result = result.filter((e) => e.category === filters.category);
+    }
+
+    if (filters.paidById) {
+      result = result.filter((e) => e.paidBy.id === filters.paidById);
+    }
+
+    if (filters.dateFrom) {
+      const from = new Date(filters.dateFrom);
+      result = result.filter((e) => new Date(e.date) >= from);
+    }
+
+    if (filters.dateTo) {
+      const to = new Date(filters.dateTo + "T23:59:59");
+      result = result.filter((e) => new Date(e.date) <= to);
+    }
+
+    return result;
+  }, [trip, filters]);
+
+  const filteredTotal = useMemo(() => {
+    return filteredExpenses.reduce((sum, e) => sum + e.amount * e.exchangeRate, 0);
+  }, [filteredExpenses]);
+
+  const hasActiveFilters = filters.keyword || filters.category || filters.paidById || filters.dateFrom || filters.dateTo;
+
+  const resetExpenseForm = useCallback(() => {
+    setEditingExpenseId(null);
+    setExpenseForm(createDefaultExpenseForm(trip?.currency || "TWD", trip?.currentMemberId || ""));
+    setCustomSplits({});
+  }, [trip?.currency, trip?.currentMemberId]);
+
   const addMember = async () => {
-    if (!newMember.trim()) return;
-    await fetch(`/api/trips/${tripId}/members`, {
+    if (!newMember.trim() || !trip?.permissions.canManageMembers) return;
+
+    const res = await safeFetch(`/api/trips/${tripId}/members`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newMember.trim() }),
     });
+
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "新增成員失敗" }));
+      showError(data.error || "新增成員失敗");
+      return;
+    }
+
     setNewMember("");
     fetchTrip();
   };
 
   const removeMember = async (memberId: string) => {
+    if (!trip?.permissions.canManageMembers) return;
     if (!confirm("確定要移除此成員？")) return;
-    await fetch(`/api/trips/${tripId}/members?memberId=${memberId}`, {
+
+    const res = await safeFetch(`/api/trips/${tripId}/members?memberId=${memberId}`, {
       method: "DELETE",
     });
+
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "移除成員失敗" }));
+      showError(data.error || "移除成員失敗");
+      return;
+    }
+
     fetchTrip();
   };
 
-  const addExpense = async (e: React.FormEvent) => {
+  const submitExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!trip) return;
+
     setSaving(true);
+    setError("");
 
-    let splits: { memberId: string; amount: number }[] = [];
-    const amt = parseFloat(expenseForm.amount);
+    const splits = buildSplits(expenseForm, trip.members, customSplits);
+    const endpoint = editingExpenseId
+      ? `/api/trips/${tripId}/expenses/${editingExpenseId}`
+      : `/api/trips/${tripId}/expenses`;
+    const method = editingExpenseId ? "PATCH" : "POST";
 
-    if (expenseForm.splitType === "equal") {
-      const perPerson = amt / trip.members.length;
-      splits = trip.members.map((m) => ({
-        memberId: m.id,
-        amount: Math.round(perPerson * 100) / 100,
-      }));
-    } else if (expenseForm.splitType === "payer_only") {
-      splits = [{ memberId: expenseForm.paidById, amount: amt }];
-    } else {
-      splits = trip.members
-        .filter((m) => customSplits[m.id] && parseFloat(customSplits[m.id]) > 0)
-        .map((m) => ({
-          memberId: m.id,
-          amount: parseFloat(customSplits[m.id]),
-        }));
-    }
-
-    await fetch(`/api/trips/${tripId}/expenses`, {
-      method: "POST",
+    const res = await safeFetch(endpoint, {
+      method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...expenseForm,
@@ -157,218 +502,244 @@ export default function TripDetailPage() {
       }),
     });
 
-    setExpenseForm({ ...defaultExpenseForm, paidById: trip.members[0]?.id || "", currency: trip.currency });
-    setCustomSplits({});
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      setSaving(false);
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "儲存費用失敗" }));
+      showError(data.error || "儲存費用失敗");
+      setSaving(false);
+      return;
+    }
+
+    resetExpenseForm();
     setSaving(false);
     setTab("expenses");
     fetchTrip();
   };
 
+  const startEditingExpense = (expense: Expense) => {
+    setEditingExpenseId(expense.id);
+    setExpenseForm({
+      amount: String(expense.amount),
+      currency: expense.currency,
+      category: expense.category,
+      description: expense.description,
+      note: expense.note || "",
+      date: formatDateForInput(expense.date),
+      paidById: expense.paidBy.id,
+      splitType: expense.splitType,
+      receiptUrl: expense.receiptUrl || "",
+      exchangeRate: String(expense.exchangeRate),
+    });
+    setCustomSplits(
+      expense.splits.reduce<Record<string, string>>((acc, split) => {
+        if (expense.splitType === "percentage") {
+          acc[split.member.id] = ((split.amount / expense.amount) * 100).toFixed(2);
+        } else {
+          acc[split.member.id] = String(split.amount);
+        }
+        return acc;
+      }, {})
+    );
+    setTab("add");
+  };
+
   const deleteExpense = async (expenseId: string) => {
     if (!confirm("確定要刪除此消費記錄？")) return;
-    await fetch(`/api/trips/${tripId}/expenses/${expenseId}`, {
+    const res = await safeFetch(`/api/trips/${tripId}/expenses/${expenseId}`, {
       method: "DELETE",
     });
+
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "刪除費用失敗" }));
+      showError(data.error || "刪除費用失敗");
+      return;
+    }
+
     fetchTrip();
   };
 
   const deleteTrip = async () => {
+    if (!trip?.permissions.canDeleteTrip) return;
     if (!confirm("確定要刪除整趟旅程？所有記錄都會消失！")) return;
-    await fetch(`/api/trips/${tripId}`, { method: "DELETE" });
+
+    const res = await safeFetch(`/api/trips/${tripId}`, { method: "DELETE" });
+
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "刪除旅程失敗" }));
+      showError(data.error || "刪除旅程失敗");
+      return;
+    }
+
     router.push("/");
   };
 
-  const calculateSettlement = (): Settlement[] => {
-    if (!trip) return [];
-
-    const balances: Record<string, number> = {};
-    trip.members.forEach((m) => {
-      balances[m.id] = 0;
+  const markSettlementPaid = async (settlement: SuggestedSettlement) => {
+    setProcessingPayment(`${settlement.fromMemberId}:${settlement.toMemberId}`);
+    const res = await safeFetch(`/api/trips/${tripId}/payments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fromMemberId: settlement.fromMemberId,
+        toMemberId: settlement.toMemberId,
+        amount: settlement.amount,
+      }),
     });
 
-    trip.expenses.forEach((expense) => {
-      const amountInBase = expense.amount * expense.exchangeRate;
-      balances[expense.paidBy.id] = (balances[expense.paidBy.id] || 0) + amountInBase;
-      expense.splits.forEach((split) => {
-        const splitInBase = split.amount * expense.exchangeRate;
-        balances[split.member.id] = (balances[split.member.id] || 0) - splitInBase;
-      });
-    });
-
-    const debtors: { id: string; name: string; amount: number }[] = [];
-    const creditors: { id: string; name: string; amount: number }[] = [];
-
-    trip.members.forEach((m) => {
-      const balance = balances[m.id] || 0;
-      if (balance < -0.01) {
-        debtors.push({ id: m.id, name: m.name, amount: -balance });
-      } else if (balance > 0.01) {
-        creditors.push({ id: m.id, name: m.name, amount: balance });
-      }
-    });
-
-    debtors.sort((a, b) => b.amount - a.amount);
-    creditors.sort((a, b) => b.amount - a.amount);
-
-    const settlements: Settlement[] = [];
-    let di = 0,
-      ci = 0;
-
-    while (di < debtors.length && ci < creditors.length) {
-      const transfer = Math.min(debtors[di].amount, creditors[ci].amount);
-      if (transfer > 0.01) {
-        settlements.push({
-          from: debtors[di].name,
-          to: creditors[ci].name,
-          amount: Math.round(transfer * 100) / 100,
-        });
-      }
-      debtors[di].amount -= transfer;
-      creditors[ci].amount -= transfer;
-      if (debtors[di].amount < 0.01) di++;
-      if (creditors[ci].amount < 0.01) ci++;
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      setProcessingPayment(null);
+      return;
     }
 
-    return settlements;
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "標記付款失敗" }));
+      showError(data.error || "標記付款失敗");
+      setProcessingPayment(null);
+      return;
+    }
+
+    setProcessingPayment(null);
+    fetchTrip();
   };
 
-  const calculatePairwiseBreakdown = (): PairwiseBreakdown[] => {
-    if (!trip) return [];
-
-    const breakdownMap = new Map<string, PairwiseBreakdown>();
-
-    trip.expenses.forEach((expense) => {
-      expense.splits.forEach((split) => {
-        if (split.member.id === expense.paidBy.id) {
-          return;
-        }
-
-        const amount = Math.round(split.amount * expense.exchangeRate * 100) / 100;
-
-        if (amount <= 0) {
-          return;
-        }
-
-        const key = `${split.member.id}:${expense.paidBy.id}`;
-        const existing = breakdownMap.get(key);
-
-        const item: SettlementBreakdownItem = {
-          expenseId: expense.id,
-          description: expense.description,
-          category: expense.category,
-          date: expense.date,
-          amount,
-          originalAmount: split.amount,
-          originalCurrency: expense.currency,
-        };
-
-        if (existing) {
-          existing.amount = Math.round((existing.amount + amount) * 100) / 100;
-          existing.items.push(item);
-          return;
-        }
-
-        breakdownMap.set(key, {
-          from: split.member.name,
-          to: expense.paidBy.name,
-          amount,
-          items: [item],
-        });
-      });
+  const togglePaymentStatus = async (paymentId: string, status: "completed" | "cancelled") => {
+    setProcessingPayment(paymentId);
+    const res = await safeFetch(`/api/trips/${tripId}/payments/${paymentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
     });
 
-    return Array.from(breakdownMap.values())
-      .map((entry) => ({
-        ...entry,
-        items: entry.items.sort(
-          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-        ),
-      }))
-      .sort((a, b) => b.amount - a.amount);
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      setProcessingPayment(null);
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "更新付款狀態失敗" }));
+      showError(data.error || "更新付款狀態失敗");
+      setProcessingPayment(null);
+      return;
+    }
+
+    setProcessingPayment(null);
+    fetchTrip();
   };
 
-  const getCategoryInfo = (value: string) =>
-    EXPENSE_CATEGORIES.find((c) => c.value === value) ?? {
-      value: "other",
-      label: "其他",
-      emoji: "📝",
-    };
+  const exportSettlementDetails = () => {
+    if (!trip) return;
+    const content = exportSettlementSummaryAsText(personSettlementGroups, trip.payments);
+    downloadFile(content, `${trip.name}-settlement-summary.txt`, "text/plain");
+  };
 
-  const totalExpenses = trip?.expenses.reduce(
-    (sum, e) => sum + e.amount * e.exchangeRate,
-    0
-  ) ?? 0;
+  const exportJSON = () => {
+    if (!trip) return;
+    const data = buildTripExportJSON(trip);
+    downloadFile(JSON.stringify(data, null, 2), `${trip.name}-backup.json`, "application/json");
+  };
+
+  const exportCSV = () => {
+    if (!trip) return;
+    const csv = buildTripExportCSV(trip);
+    downloadFile(csv, `${trip.name}-expenses.csv`, "text/csv");
+  };
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-gray-400">
-        載入中...
+      <div className="flex min-h-screen items-center justify-center text-gray-400">
+        <div className="text-center">
+          <div className="mb-3 text-4xl animate-bounce">✈️</div>
+          <p>載入中...</p>
+        </div>
       </div>
     );
   }
 
   if (!trip) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <div className="text-6xl mb-4">😵</div>
-        <p className="text-gray-500 mb-4">找不到此旅程</p>
-        <Link href="/" className="text-primary-500 hover:underline">
-          回首頁
-        </Link>
+      <div className="flex min-h-screen flex-col items-center justify-center px-4">
+        <div className="mb-4 text-6xl">😵</div>
+        <p className="mb-4 text-center text-gray-500">{error || "找不到此旅程"}</p>
+        <div className="flex gap-3">
+          <button
+            onClick={fetchTrip}
+            className="rounded-xl bg-primary-500 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+          >
+            重新載入
+          </button>
+          <Link href="/" className="rounded-xl border border-gray-200 px-5 py-2.5 text-sm text-gray-500 transition-colors hover:border-gray-300">
+            回首頁
+          </Link>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50">
-      <header className="bg-white/80 backdrop-blur-sm border-b border-primary-100 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Link
-                href="/"
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
+      <header className="sticky top-0 z-10 border-b border-primary-100 bg-white/80 backdrop-blur-sm">
+        <div className="mx-auto max-w-4xl px-4 py-3 sm:py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <Link href="/" className="shrink-0 text-gray-400 transition-colors hover:text-gray-600">
                 ←
               </Link>
-              <span className="text-3xl">{trip.coverEmoji}</span>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">
-                  {trip.name}
-                </h1>
-                <p className="text-sm text-gray-400">
+              <span className="shrink-0 text-2xl sm:text-3xl">{trip.coverEmoji}</span>
+              <div className="min-w-0">
+                <h1 className="truncate text-lg font-bold text-gray-800 sm:text-xl">{trip.name}</h1>
+                <p className="truncate text-xs text-gray-400 sm:text-sm">
                   {trip.destination && `📍 ${trip.destination} · `}
                   {formatDate(trip.startDate)}
                   {trip.endDate && ` ~ ${formatDate(trip.endDate)}`}
                 </p>
+                <p className="hidden text-xs text-gray-400 sm:block">
+                  建立者：{trip.owner?.name || "尚未認領"} · 目前身份：{trip.currentUser.name}
+                </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            <div className="flex shrink-0 items-center gap-2">
               <button
-                onClick={() => setShowInvite(!showInvite)}
-                className="text-sm bg-accent-50 text-accent-600 px-3 py-1.5 rounded-xl hover:bg-accent-100 transition-colors"
+                onClick={() => setShowInvite((prev) => !prev)}
+                className="rounded-xl bg-accent-50 px-2.5 py-1.5 text-xs text-accent-600 transition-colors hover:bg-accent-100 sm:px-3 sm:text-sm"
               >
                 🔗 邀請
               </button>
-              <button
-                onClick={deleteTrip}
-                className="text-sm text-gray-300 hover:text-red-400 px-2 py-1.5 transition-colors"
-              >
-                🗑️
-              </button>
+              {trip.permissions.canDeleteTrip && (
+                <button
+                  onClick={deleteTrip}
+                  className="px-2 py-1.5 text-sm text-gray-300 transition-colors hover:text-red-400"
+                >
+                  🗑️
+                </button>
+              )}
             </div>
           </div>
 
           {showInvite && (
-            <div className="mt-3 bg-accent-50 rounded-xl p-3 flex items-center gap-3">
+            <div className="mt-3 flex items-center gap-3 rounded-xl bg-accent-50 p-3">
               <span className="text-sm text-accent-700">邀請碼：</span>
-              <code className="bg-white px-3 py-1 rounded-lg font-mono text-lg font-bold text-accent-700">
+              <code className="rounded-lg bg-white px-3 py-1 font-mono text-lg font-bold text-accent-700">
                 {trip.inviteCode}
               </code>
               <button
-                onClick={() => {
-                  navigator.clipboard.writeText(trip.inviteCode);
-                }}
+                onClick={() => navigator.clipboard.writeText(trip.inviteCode)}
                 className="text-sm text-accent-500 hover:text-accent-700"
               >
                 📋 複製
@@ -378,84 +749,124 @@ export default function TripDetailPage() {
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-4">
-        <div className="bg-white rounded-2xl mt-4 p-4 shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-gray-500">👥 成員 ({trip.members.length})</h3>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-3">
-            {trip.members.map((m) => (
-              <span
-                key={m.id}
-                className="inline-flex items-center gap-1.5 bg-accent-50 text-accent-700 px-3 py-1.5 rounded-full text-sm"
+      <div className="mx-auto max-w-4xl px-4 pb-8">
+        {error && (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-500">
+            <span>{error}</span>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={fetchTrip}
+                className="rounded-lg bg-red-100 px-3 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-200"
               >
-                <span className="w-5 h-5 rounded-full bg-accent-200 text-accent-800 text-xs flex items-center justify-center font-medium">
-                  {m.name[0]}
+                重試
+              </button>
+              <button onClick={() => setError("")} className="text-red-300 hover:text-red-500">
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-medium text-gray-500">👥 成員 ({trip.members.length})</h3>
+            {trip.permissions.canManageMembers ? (
+              <span className="text-xs text-primary-500">只有建立者可以增減成員</span>
+            ) : (
+              <span className="text-xs text-gray-400">你目前只能查看成員名單</span>
+            )}
+          </div>
+
+          <div className="mb-3 flex flex-wrap gap-2">
+            {trip.members.map((member) => (
+              <span
+                key={member.id}
+                className="inline-flex items-center gap-1.5 rounded-full bg-accent-50 px-3 py-1.5 text-sm text-accent-700"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent-200 text-xs font-medium text-accent-800">
+                  {member.name[0]}
                 </span>
-                {m.name}
-                <button
-                  onClick={() => removeMember(m.id)}
-                  className="text-accent-300 hover:text-red-400 ml-0.5"
-                >
-                  ×
-                </button>
+                {member.name}
+                {member.userId === trip.currentUser.id && (
+                  <span className="text-[10px] text-accent-500">你</span>
+                )}
+                {trip.permissions.canManageMembers && member.userId !== trip.owner?.id && (
+                  <button
+                    onClick={() => removeMember(member.id)}
+                    className="ml-0.5 text-accent-300 hover:text-red-400"
+                  >
+                    ×
+                  </button>
+                )}
               </span>
             ))}
           </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newMember}
-              onChange={(e) => setNewMember(e.target.value)}
-              placeholder="新增成員..."
-              className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-300"
-              onKeyDown={(e) => e.key === "Enter" && addMember()}
-            />
-            <button
-              onClick={addMember}
-              className="text-sm bg-accent-500 text-white px-4 py-2 rounded-xl hover:bg-accent-600 transition-colors"
-            >
-              +
-            </button>
-          </div>
+
+          {trip.permissions.canManageMembers && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMember}
+                onChange={(e) => setNewMember(e.target.value)}
+                placeholder="新增成員..."
+                className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-300"
+                onKeyDown={(e) => e.key === "Enter" && addMember()}
+              />
+              <button
+                onClick={addMember}
+                className="rounded-xl bg-accent-500 px-4 py-2 text-sm text-white transition-colors hover:bg-accent-600"
+              >
+                +
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="bg-white rounded-2xl mt-4 p-1 shadow-sm border border-gray-100 flex">
+        <div className="no-scrollbar mt-4 flex overflow-x-auto rounded-2xl border border-gray-100 bg-white p-1 shadow-sm">
           {(
             [
               { key: "expenses", label: "💰 消費", count: trip.expenses.length },
-              { key: "add", label: "➕ 記帳" },
+              { key: "add", label: editingExpenseId ? "✏️ 編輯" : "➕ 記帳" },
               { key: "settle", label: "🤝 結算" },
               { key: "stats", label: "📊 統計" },
+              { key: "activity", label: "📜 紀錄" },
             ] as const
-          ).map((t) => (
+          ).map((item) => (
             <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                tab === t.key
-                  ? "bg-primary-500 text-white shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
+              key={item.key}
+              onClick={() => setTab(item.key)}
+              className={`flex-1 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-medium transition-colors sm:px-4 ${
+                tab === item.key ? "bg-primary-500 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              {t.label}
-              {"count" in t && t.count !== undefined && (
-                <span className="ml-1 text-xs opacity-70">({t.count})</span>
+              {item.label}
+              {"count" in item && item.count !== undefined && (
+                <span className="ml-1 text-xs opacity-70">({item.count})</span>
               )}
             </button>
           ))}
         </div>
 
-        <div className="mt-4 pb-8">
+        <div className="mt-4">
           {tab === "expenses" && (
             <ExpenseList
-              expenses={trip.expenses}
+              expenses={filteredExpenses}
+              allExpenses={trip.expenses}
               currency={trip.currency}
-              totalExpenses={totalExpenses}
-              getCategoryInfo={getCategoryInfo}
+              totalExpenses={hasActiveFilters ? filteredTotal : totalExpenses}
+              currentUserId={trip.currentUser.id}
+              isOwner={trip.permissions.isOwner}
+              members={trip.members}
+              filters={filters}
+              setFilters={setFilters}
+              showFilters={showFilters}
+              setShowFilters={setShowFilters}
+              hasActiveFilters={!!hasActiveFilters}
+              onEdit={startEditingExpense}
               onDelete={deleteExpense}
             />
           )}
+
           {tab === "add" && (
             <AddExpenseForm
               members={trip.members}
@@ -465,25 +876,45 @@ export default function TripDetailPage() {
               customSplits={customSplits}
               setCustomSplits={setCustomSplits}
               saving={saving}
-              onSubmit={addExpense}
+              onSubmit={submitExpense}
+              onCancel={editingExpenseId ? resetExpenseForm : undefined}
+              submitLabel={editingExpenseId ? "儲存費用修改" : "儲存消費"}
+              onError={showError}
             />
           )}
+
           {tab === "settle" && (
             <SettlementView
-              settlements={calculateSettlement()}
-              pairwiseBreakdowns={calculatePairwiseBreakdown()}
               currency={trip.currency}
               totalExpenses={totalExpenses}
               members={trip.members}
               expenses={trip.expenses}
-              getCategoryInfo={getCategoryInfo}
+              payments={trip.payments}
+              settlements={suggestedSettlements}
+              pairwiseBreakdowns={pairwiseBreakdowns}
+              personSettlementGroups={personSettlementGroups}
+              expandedBreakdowns={expandedBreakdowns}
+              onToggleBreakdown={(key) =>
+                setExpandedBreakdowns((prev) => ({ ...prev, [key]: !prev[key] }))
+              }
+              onMarkPaid={markSettlementPaid}
+              onTogglePaymentStatus={togglePaymentStatus}
+              processingPayment={processingPayment}
+              onExport={exportSettlementDetails}
+              onExportJSON={exportJSON}
+              onExportCSV={exportCSV}
             />
           )}
+
           {tab === "stats" && (
-            <StatsView
-              expenses={trip.expenses}
-              currency={trip.currency}
-              getCategoryInfo={getCategoryInfo}
+            <StatsView expenses={trip.expenses} currency={trip.currency} />
+          )}
+
+          {tab === "activity" && (
+            <ActivityView
+              activities={activities}
+              loading={activitiesLoading}
+              onRefresh={fetchActivities}
             />
           )}
         </div>
@@ -494,21 +925,39 @@ export default function TripDetailPage() {
 
 function ExpenseList({
   expenses,
+  allExpenses,
   currency,
   totalExpenses,
-  getCategoryInfo,
+  currentUserId,
+  isOwner,
+  members,
+  filters,
+  setFilters,
+  showFilters,
+  setShowFilters,
+  hasActiveFilters,
+  onEdit,
   onDelete,
 }: {
   expenses: Expense[];
+  allExpenses: Expense[];
   currency: string;
   totalExpenses: number;
-  getCategoryInfo: (v: string) => { label: string; emoji: string };
-  onDelete: (id: string) => void;
+  currentUserId: string;
+  isOwner: boolean;
+  members: Member[];
+  filters: ExpenseFilters;
+  setFilters: React.Dispatch<React.SetStateAction<ExpenseFilters>>;
+  showFilters: boolean;
+  setShowFilters: React.Dispatch<React.SetStateAction<boolean>>;
+  hasActiveFilters: boolean;
+  onEdit: (expense: Expense) => void;
+  onDelete: (expenseId: string) => void;
 }) {
-  if (expenses.length === 0) {
+  if (allExpenses.length === 0) {
     return (
-      <div className="text-center py-12">
-        <div className="text-5xl mb-3">📝</div>
+      <div className="py-12 text-center">
+        <div className="mb-3 text-5xl">📝</div>
         <p className="text-gray-400">還沒有消費記錄，快去記帳吧！</p>
       </div>
     );
@@ -516,71 +965,180 @@ function ExpenseList({
 
   return (
     <div>
-      <div className="bg-gradient-to-r from-primary-500 to-primary-600 rounded-2xl p-5 text-white mb-4">
-        <p className="text-sm opacity-80">總支出</p>
-        <p className="text-3xl font-bold mt-1">
-          {formatCurrency(totalExpenses, currency)}
+      <div className="mb-4 rounded-2xl bg-gradient-to-r from-primary-500 to-primary-600 p-4 text-white sm:p-5">
+        <p className="text-sm opacity-80">{hasActiveFilters ? "篩選結果" : "總支出"}</p>
+        <p className="mt-1 text-2xl font-bold sm:text-3xl">{formatCurrency(totalExpenses, currency)}</p>
+        <p className="mt-1 text-sm opacity-60">
+          {hasActiveFilters
+            ? `${expenses.length} / ${allExpenses.length} 筆消費`
+            : `${expenses.length} 筆消費`}
         </p>
-        <p className="text-sm opacity-60 mt-1">{expenses.length} 筆消費</p>
       </div>
 
-      <div className="space-y-3">
-        {expenses.map((expense) => {
-          const cat = getCategoryInfo(expense.category);
-          return (
-            <div
-              key={expense.id}
-              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl mt-0.5">{cat.emoji}</span>
-                  <div>
-                    <h4 className="font-medium text-gray-800">
-                      {expense.description}
-                    </h4>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {cat.label} · {formatDate(expense.date)} ·{" "}
-                      {expense.paidBy.name} 付款
-                    </p>
-                    {expense.note && (
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        💬 {expense.note}
+      <div className="mb-4 rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <button
+          onClick={() => setShowFilters((prev) => !prev)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm text-gray-600"
+        >
+          <span className="flex items-center gap-2">
+            🔍 搜尋與篩選
+            {hasActiveFilters && (
+              <span className="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-600">
+                篩選中
+              </span>
+            )}
+          </span>
+          <span className="text-gray-400">{showFilters ? "▴" : "▾"}</span>
+        </button>
+
+        {showFilters && (
+          <div className="border-t border-gray-100 px-4 pb-4 pt-3">
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={filters.keyword}
+                onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
+                placeholder="搜尋說明或備註..."
+                className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  value={filters.category}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, category: e.target.value }))}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                >
+                  <option value="">所有類別</option>
+                  {EXPENSE_CATEGORIES.map((cat) => (
+                    <option key={cat.value} value={cat.value}>
+                      {cat.emoji} {cat.label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={filters.paidById}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, paidById: e.target.value }))}
+                  className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                >
+                  <option value="">所有付款人</option>
+                  {members.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">起始日期</label>
+                  <input
+                    type="date"
+                    value={filters.dateFrom}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-gray-400">結束日期</label>
+                  <input
+                    type="date"
+                    value={filters.dateTo}
+                    onChange={(e) => setFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  />
+                </div>
+              </div>
+
+              {hasActiveFilters && (
+                <button
+                  onClick={() => setFilters(EMPTY_FILTERS)}
+                  className="text-xs text-primary-500 hover:text-primary-700"
+                >
+                  清除所有篩選條件
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {expenses.length === 0 && hasActiveFilters ? (
+        <div className="py-12 text-center">
+          <div className="mb-3 text-5xl">🔍</div>
+          <p className="text-gray-400">沒有符合條件的消費記錄</p>
+          <button
+            onClick={() => setFilters(EMPTY_FILTERS)}
+            className="mt-3 text-sm text-primary-500 hover:text-primary-700"
+          >
+            清除篩選條件
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {expenses.map((expense) => {
+            const category = getCategoryInfo(expense.category);
+            const canManage =
+              isOwner || expense.createdBy?.id === currentUserId || expense.paidBy.userId === currentUserId;
+
+            return (
+              <div key={expense.id} className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-2 sm:gap-3">
+                    <span className="mt-0.5 shrink-0 text-xl sm:text-2xl">{category.emoji}</span>
+                    <div className="min-w-0">
+                      <h4 className="truncate font-medium text-gray-800">{expense.description}</h4>
+                      <p className="mt-0.5 text-xs text-gray-400">
+                        {category.label} · {formatDate(expense.date)} · {expense.paidBy.name} 付款
+                      </p>
+                      {expense.createdBy && (
+                        <p className="mt-0.5 text-xs text-gray-400">建立者：{expense.createdBy.name}</p>
+                      )}
+                      {expense.note && <p className="mt-0.5 text-xs text-gray-400">💬 {expense.note}</p>}
+                      {expense.receiptUrl && (
+                        <a
+                          href={expense.receiptUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-0.5 inline-block text-xs text-primary-500 hover:underline"
+                        >
+                          📎 查看收據
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <p className="font-bold text-gray-800">{formatCurrency(expense.amount, expense.currency)}</p>
+                    {expense.currency !== currency && (
+                      <p className="text-xs text-gray-400">
+                        ≈ {formatCurrency(expense.amount * expense.exchangeRate, currency)}
                       </p>
                     )}
-                    {expense.receiptUrl && (
-                      <a
-                        href={expense.receiptUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-primary-500 hover:underline mt-0.5 inline-block"
-                      >
-                        📎 查看收據
-                      </a>
+                    {canManage && (
+                      <div className="mt-2 flex justify-end gap-3 text-xs">
+                        <button
+                          onClick={() => onEdit(expense)}
+                          className="min-h-[28px] min-w-[40px] text-primary-500 transition-colors hover:text-primary-700"
+                        >
+                          編輯
+                        </button>
+                        <button
+                          onClick={() => onDelete(expense.id)}
+                          className="min-h-[28px] min-w-[40px] text-gray-300 transition-colors hover:text-red-400"
+                        >
+                          刪除
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-bold text-gray-800">
-                    {formatCurrency(expense.amount, expense.currency)}
-                  </p>
-                  {expense.currency !== currency && (
-                    <p className="text-xs text-gray-400">
-                      ≈ {formatCurrency(expense.amount * expense.exchangeRate, currency)}
-                    </p>
-                  )}
-                  <button
-                    onClick={() => onDelete(expense.id)}
-                    className="text-xs text-gray-300 hover:text-red-400 mt-1 transition-colors"
-                  >
-                    刪除
-                  </button>
-                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -594,15 +1152,21 @@ function AddExpenseForm({
   setCustomSplits,
   saving,
   onSubmit,
+  onCancel,
+  submitLabel,
+  onError,
 }: {
   members: Member[];
   tripCurrency: string;
-  form: typeof defaultExpenseForm;
-  setForm: React.Dispatch<React.SetStateAction<typeof defaultExpenseForm>>;
+  form: ExpenseFormState;
+  setForm: React.Dispatch<React.SetStateAction<ExpenseFormState>>;
   customSplits: Record<string, string>;
   setCustomSplits: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   saving: boolean;
   onSubmit: (e: React.FormEvent) => void;
+  onCancel?: () => void;
+  submitLabel: string;
+  onError: (msg: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
   const [rateLoading, setRateLoading] = useState(false);
@@ -612,34 +1176,49 @@ function AddExpenseForm({
       setForm((prev) => ({ ...prev, exchangeRate: "1" }));
       return;
     }
+
     setRateLoading(true);
     try {
-      const res = await fetch(`/api/exchange-rate?from=${from}&to=${to}`);
+      const res = await safeFetch(`/api/exchange-rate?from=${from}&to=${to}`);
+      if (res.status === 0) {
+        onError("匯率查詢失敗：網路連線異常，請手動輸入匯率");
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         setForm((prev) => ({ ...prev, exchangeRate: String(data.rate) }));
+      } else {
+        onError("匯率查詢失敗，請手動輸入匯率");
       }
     } finally {
       setRateLoading(false);
     }
   };
 
-  const handleCurrencyChange = (currency: string) => {
-    setForm((prev) => ({ ...prev, currency }));
-    fetchExchangeRate(currency, tripCurrency);
-  };
-
   const handleReceiptUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      onError("收據照片不能超過 10MB");
+      return;
+    }
+
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await safeFetch("/api/upload", { method: "POST", body: formData });
+      if (res.status === 0) {
+        onError("收據上傳失敗：網路連線異常，請稍後再試");
+        return;
+      }
       if (res.ok) {
-        const { url } = await res.json();
-        setForm((prev) => ({ ...prev, receiptUrl: url }));
+        const data = await res.json();
+        setForm((prev) => ({ ...prev, receiptUrl: data.url }));
+      } else {
+        onError("收據上傳失敗，請稍後再試");
       }
     } finally {
       setUploading(false);
@@ -647,46 +1226,40 @@ function AddExpenseForm({
   };
 
   if (members.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="text-5xl mb-3">👥</div>
-        <p className="text-gray-400">請先新增旅伴成員才能記帳</p>
-      </div>
-    );
+    return <div className="py-12 text-center text-gray-400">請先確認旅程成員資料</div>;
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              金額 *
-            </label>
+            <label className="mb-1 block text-sm font-medium text-gray-600">金額 *</label>
             <input
               type="number"
               step="0.01"
               required
               value={form.amount}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, amount: e.target.value }))
-              }
+              onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
+              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-primary-300"
               placeholder="0.00"
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
+              inputMode="decimal"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              幣別
-            </label>
+            <label className="mb-1 block text-sm font-medium text-gray-600">幣別</label>
             <select
               value={form.currency}
-              onChange={(e) => handleCurrencyChange(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+              onChange={(e) => {
+                const value = e.target.value;
+                setForm((prev) => ({ ...prev, currency: value }));
+                fetchExchangeRate(value, tripCurrency);
+              }}
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-primary-300"
             >
-              {CURRENCIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.symbol} {c.code}
+              {CURRENCIES.map((currency) => (
+                <option key={currency.code} value={currency.code}>
+                  {currency.symbol} {currency.code}
                 </option>
               ))}
             </select>
@@ -694,75 +1267,59 @@ function AddExpenseForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            說明 *
-          </label>
+          <label className="mb-1 block text-sm font-medium text-gray-600">說明 *</label>
           <input
             type="text"
             required
             value={form.description}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, description: e.target.value }))
-            }
+            onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-primary-300"
             placeholder="例：午餐拉麵"
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-2">
-            類別
-          </label>
+          <label className="mb-2 block text-sm font-medium text-gray-600">類別</label>
           <div className="flex flex-wrap gap-2">
-            {EXPENSE_CATEGORIES.map((cat) => (
+            {EXPENSE_CATEGORIES.map((category) => (
               <button
-                key={cat.value}
+                key={category.value}
                 type="button"
-                onClick={() =>
-                  setForm((prev) => ({ ...prev, category: cat.value }))
-                }
-                className={`px-3 py-1.5 rounded-xl text-sm transition-all ${
-                  form.category === cat.value
+                onClick={() => setForm((prev) => ({ ...prev, category: category.value }))}
+                className={`rounded-xl px-3 py-2 text-sm transition-all ${
+                  form.category === category.value
                     ? "bg-primary-500 text-white"
                     : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                 }`}
               >
-                {cat.emoji} {cat.label}
+                {category.emoji} {category.label}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              日期 *
-            </label>
+            <label className="mb-1 block text-sm font-medium text-gray-600">日期 *</label>
             <input
               type="date"
               required
               value={form.date}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, date: e.target.value }))
-              }
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
+              onChange={(e) => setForm((prev) => ({ ...prev, date: e.target.value }))}
+              className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-primary-300"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1">
-              誰付的 *
-            </label>
+            <label className="mb-1 block text-sm font-medium text-gray-600">誰付的 *</label>
             <select
               required
               value={form.paidById}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, paidById: e.target.value }))
-              }
-              className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+              onChange={(e) => setForm((prev) => ({ ...prev, paidById: e.target.value }))}
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-primary-300"
             >
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
                 </option>
               ))}
             </select>
@@ -770,67 +1327,53 @@ function AddExpenseForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
-            備註
-          </label>
+          <label className="mb-1 block text-sm font-medium text-gray-600">備註</label>
           <input
             type="text"
             value={form.note}
-            onChange={(e) =>
-              setForm((prev) => ({ ...prev, note: e.target.value }))
-            }
+            onChange={(e) => setForm((prev) => ({ ...prev, note: e.target.value }))}
+            className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-primary-300"
             placeholder="選填..."
-            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
           />
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-        <label className="block text-sm font-medium text-gray-600 mb-2">
-          分帳方式
-        </label>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {SPLIT_TYPES.map((st) => (
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <label className="mb-2 block text-sm font-medium text-gray-600">分帳方式</label>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {SPLIT_TYPES.map((splitType) => (
             <button
-              key={st.value}
+              key={splitType.value}
               type="button"
-              onClick={() =>
-                setForm((prev) => ({ ...prev, splitType: st.value }))
-              }
-              className={`px-4 py-2 rounded-xl text-sm transition-all ${
-                form.splitType === st.value
+              onClick={() => setForm((prev) => ({ ...prev, splitType: splitType.value }))}
+              className={`rounded-xl px-4 py-2 text-sm transition-all ${
+                form.splitType === splitType.value
                   ? "bg-accent-500 text-white"
                   : "bg-gray-50 text-gray-600 hover:bg-gray-100"
               }`}
             >
-              {st.label}
+              {splitType.label}
             </button>
           ))}
         </div>
 
         {(form.splitType === "exact" || form.splitType === "percentage") && (
           <div className="space-y-2">
-            {members.map((m) => (
-              <div key={m.id} className="flex items-center gap-3">
-                <span className="text-sm text-gray-600 w-20 truncate">
-                  {m.name}
-                </span>
+            {members.map((member) => (
+              <div key={member.id} className="flex items-center gap-3">
+                <span className="w-20 truncate text-sm text-gray-600">{member.name}</span>
                 <input
                   type="number"
                   step="0.01"
-                  value={customSplits[m.id] || ""}
+                  value={customSplits[member.id] || ""}
                   onChange={(e) =>
-                    setCustomSplits((prev) => ({
-                      ...prev,
-                      [m.id]: e.target.value,
-                    }))
+                    setCustomSplits((prev) => ({ ...prev, [member.id]: e.target.value }))
                   }
                   placeholder={form.splitType === "percentage" ? "%" : "金額"}
-                  className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-300"
+                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-300"
+                  inputMode="decimal"
                 />
-                {form.splitType === "percentage" && (
-                  <span className="text-sm text-gray-400">%</span>
-                )}
+                {form.splitType === "percentage" && <span className="text-sm text-gray-400">%</span>}
               </div>
             ))}
           </div>
@@ -838,8 +1381,8 @@ function AddExpenseForm({
       </div>
 
       {form.currency !== tripCurrency && (
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <label className="block text-sm font-medium text-gray-600 mb-2">
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+          <label className="mb-2 block text-sm font-medium text-gray-600">
             💱 匯率 ({form.currency} → {tripCurrency})
           </label>
           <div className="flex items-center gap-3">
@@ -847,51 +1390,37 @@ function AddExpenseForm({
               type="number"
               step="0.0001"
               value={form.exchangeRate}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, exchangeRate: e.target.value }))
-              }
-              className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
+              onChange={(e) => setForm((prev) => ({ ...prev, exchangeRate: e.target.value }))}
+              className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-primary-300"
+              inputMode="decimal"
             />
-            {rateLoading && (
-              <span className="text-sm text-gray-400">查詢中...</span>
-            )}
+            {rateLoading && <span className="text-sm text-gray-400">查詢中...</span>}
             {form.amount && (
               <span className="text-sm text-gray-500">
-                ≈ {formatCurrency(
-                  parseFloat(form.amount) * parseFloat(form.exchangeRate || "1"),
-                  tripCurrency
-                )}
+                ≈ {formatCurrency(parseFloat(form.amount) * parseFloat(form.exchangeRate || "1"), tripCurrency)}
               </span>
             )}
           </div>
         </div>
       )}
 
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-        <label className="block text-sm font-medium text-gray-600 mb-2">
-          📸 收據照片
-        </label>
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <label className="mb-2 block text-sm font-medium text-gray-600">📸 收據照片</label>
         {form.receiptUrl ? (
           <div className="relative">
-            <img
-              src={form.receiptUrl}
-              alt="收據"
-              className="w-full max-h-48 object-cover rounded-xl"
-            />
+            <img src={form.receiptUrl} alt="收據" className="max-h-48 w-full rounded-xl object-cover" />
             <button
               type="button"
               onClick={() => setForm((prev) => ({ ...prev, receiptUrl: "" }))}
-              className="absolute top-2 right-2 bg-black/50 text-white w-7 h-7 rounded-full text-sm hover:bg-black/70"
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-sm text-white hover:bg-black/70"
             >
               ✕
             </button>
           </div>
         ) : (
-          <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl py-8 cursor-pointer hover:border-primary-300 hover:bg-primary-50/30 transition-colors">
-            <span className="text-3xl mb-2">📷</span>
-            <span className="text-sm text-gray-400">
-              {uploading ? "上傳中..." : "點擊上傳收據照片"}
-            </span>
+          <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-8 transition-colors hover:border-primary-300 hover:bg-primary-50/30 active:bg-primary-50/50">
+            <span className="mb-2 text-3xl">📷</span>
+            <span className="text-sm text-gray-400">{uploading ? "上傳中..." : "點擊上傳收據照片"}</span>
             <input
               type="file"
               accept="image/*"
@@ -904,213 +1433,357 @@ function AddExpenseForm({
         )}
       </div>
 
-      <button
-        type="submit"
-        disabled={saving}
-        className="w-full bg-primary-500 hover:bg-primary-600 disabled:bg-primary-300 text-white py-3 rounded-2xl font-semibold transition-colors shadow-md shadow-primary-200"
-      >
-        {saving ? "儲存中..." : "💾 儲存消費"}
-      </button>
+      <div className="flex gap-3">
+        <button
+          type="submit"
+          disabled={saving}
+          className="flex-1 rounded-2xl bg-primary-500 py-3.5 font-semibold text-white shadow-md shadow-primary-200 transition-colors hover:bg-primary-600 active:bg-primary-700 disabled:bg-primary-300"
+        >
+          {saving ? "儲存中..." : `💾 ${submitLabel}`}
+        </button>
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-2xl border border-gray-200 px-5 py-3.5 font-medium text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700"
+          >
+            取消
+          </button>
+        )}
+      </div>
     </form>
   );
 }
 
 function SettlementView({
-  settlements,
-  pairwiseBreakdowns,
   currency,
   totalExpenses,
   members,
   expenses,
-  getCategoryInfo,
+  payments,
+  settlements,
+  pairwiseBreakdowns,
+  personSettlementGroups,
+  expandedBreakdowns,
+  onToggleBreakdown,
+  onMarkPaid,
+  onTogglePaymentStatus,
+  processingPayment,
+  onExport,
+  onExportJSON,
+  onExportCSV,
 }: {
-  settlements: Settlement[];
-  pairwiseBreakdowns: PairwiseBreakdown[];
   currency: string;
   totalExpenses: number;
   members: Member[];
   expenses: Expense[];
-  getCategoryInfo: (v: string) => { label: string; emoji: string };
+  payments: Payment[];
+  settlements: SuggestedSettlement[];
+  pairwiseBreakdowns: PairwiseBreakdown[];
+  personSettlementGroups: ReturnType<typeof calculatePersonSettlementGroups>;
+  expandedBreakdowns: Record<string, boolean>;
+  onToggleBreakdown: (key: string) => void;
+  onMarkPaid: (settlement: SuggestedSettlement) => void;
+  onTogglePaymentStatus: (paymentId: string, status: "completed" | "cancelled") => void;
+  processingPayment: string | null;
+  onExport: () => void;
+  onExportJSON: () => void;
+  onExportCSV: () => void;
 }) {
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
-  const [expandedBreakdowns, setExpandedBreakdowns] = useState<Record<string, boolean>>({});
-
-  const toggleBreakdown = (key: string) => {
-    setExpandedBreakdowns((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
 
   return (
     <div className="space-y-4">
-      <div className="bg-gradient-to-r from-accent-500 to-accent-600 rounded-2xl p-5 text-white">
+      <div className="rounded-2xl bg-gradient-to-r from-accent-500 to-accent-600 p-4 text-white sm:p-5">
         <p className="text-sm opacity-80">人均花費</p>
-        <p className="text-3xl font-bold mt-1">
-          {formatCurrency(perPerson, currency)}
-        </p>
-        <p className="text-sm opacity-60 mt-1">
+        <p className="mt-1 text-2xl font-bold sm:text-3xl">{formatCurrency(perPerson, currency)}</p>
+        <p className="mt-1 text-sm opacity-60">
           共 {members.length} 人 · 總計 {formatCurrency(totalExpenses, currency)}
         </p>
       </div>
 
-      {settlements.length === 0 ? (
-        <div className="text-center py-8">
-          <div className="text-5xl mb-3">✅</div>
-          <p className="text-gray-500">帳已平，不需要結算！</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h3 className="text-sm font-medium text-gray-500 mb-4">
-            💸 最佳結算方案
-          </h3>
-          <div className="space-y-3">
-            {settlements.map((s, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-8 h-8 rounded-full bg-red-50 text-red-600 text-xs flex items-center justify-center font-medium">
-                    {s.from[0]}
-                  </span>
-                  <span className="text-gray-600">{s.from}</span>
-                  <span className="text-gray-300 mx-1">→</span>
-                  <span className="w-8 h-8 rounded-full bg-green-50 text-green-600 text-xs flex items-center justify-center font-medium">
-                    {s.to[0]}
-                  </span>
-                  <span className="text-gray-600">{s.to}</span>
-                </div>
-                <span className="font-bold text-primary-600">
-                  {formatCurrency(s.amount, currency)}
-                </span>
-              </div>
-            ))}
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-500">💸 待付款結算</h3>
+            <p className="mt-1 text-xs text-gray-400">標記已付款後，系統會自動把這筆款項從待結算結果中扣掉。</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={onExport}
+              className="rounded-xl border border-primary-200 px-3 py-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 sm:text-sm"
+            >
+              📄 結算明細
+            </button>
+            <button
+              onClick={onExportJSON}
+              className="rounded-xl border border-accent-200 px-3 py-2 text-xs font-medium text-accent-600 transition-colors hover:bg-accent-50 sm:text-sm"
+            >
+              💾 JSON 備份
+            </button>
+            <button
+              onClick={onExportCSV}
+              className="rounded-xl border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 sm:text-sm"
+            >
+              📊 CSV 匯出
+            </button>
           </div>
         </div>
-      )}
 
-      {pairwiseBreakdowns.length > 0 && (
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <h3 className="text-sm font-medium text-gray-500 mb-1">
-            🧾 按品項拆分的付款明細
-          </h3>
-          <p className="text-xs text-gray-400 mb-4">
-            這裡保留原始消費的付款對象與品項，方便核對每一筆錢是為了什麼支出。
-          </p>
-          <div className="space-y-4">
-            {pairwiseBreakdowns.map((breakdown) => {
-              const breakdownKey = `${breakdown.from}-${breakdown.to}`;
-              const isExpanded = expandedBreakdowns[breakdownKey] ?? false;
+        {settlements.length === 0 ? (
+          <div className="py-8 text-center">
+            <div className="mb-3 text-5xl">✅</div>
+            <p className="text-gray-500">目前沒有待處理的結算。</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {settlements.map((settlement) => {
+              const paymentKey = `${settlement.fromMemberId}:${settlement.toMemberId}`;
+              const pairwise = pairwiseBreakdowns.find(
+                (item) =>
+                  item.fromMemberId === settlement.fromMemberId && item.toMemberId === settlement.toMemberId
+              );
 
               return (
-                <div
-                  key={breakdownKey}
-                  className="rounded-2xl border border-gray-100 bg-gray-50/70 p-4"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleBreakdown(breakdownKey)}
-                    className="flex w-full flex-col gap-2 text-left sm:flex-row sm:items-center sm:justify-between"
-                  >
+                <div key={paymentKey} className="rounded-xl border border-gray-100 px-3 py-3 sm:px-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <span className="font-medium">{breakdown.from}</span>
-                        <span className="text-gray-300">→</span>
-                        <span className="font-medium">{breakdown.to}</span>
-                      </div>
+                      <p className="text-sm font-medium text-gray-700">
+                        {settlement.from} → {settlement.to}
+                      </p>
                       <p className="mt-1 text-xs text-gray-400">
-                        {breakdown.items.length} 筆品項 {isExpanded ? "· 點擊收合" : "· 點擊展開"}
+                        {pairwise ? `${pairwise.items.length} 筆原始品項可對照` : "這筆是最佳化後的結算建議"}
                       </p>
                     </div>
-                    <div className="flex items-center justify-between gap-3 sm:block sm:text-right">
-                      <p className="text-sm font-semibold text-primary-600">
-                        合計 {formatCurrency(breakdown.amount, currency)}
-                      </p>
-                      <span className="text-sm text-gray-400" aria-hidden="true">
-                        {isExpanded ? "▴" : "▾"}
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-primary-600">
+                        {formatCurrency(settlement.amount, currency)}
                       </span>
+                      <button
+                        onClick={() => onMarkPaid(settlement)}
+                        disabled={processingPayment === paymentKey}
+                        className="rounded-xl bg-primary-500 px-3 py-2 text-sm text-white transition-colors hover:bg-primary-600 active:bg-primary-700 disabled:bg-primary-300"
+                      >
+                        {processingPayment === paymentKey ? "處理中..." : "標記已付款"}
+                      </button>
                     </div>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="mt-3 space-y-2">
-                      {breakdown.items.map((item) => {
-                        const category = getCategoryInfo(item.category);
-
-                        return (
-                          <div
-                            key={`${breakdown.from}-${breakdown.to}-${item.expenseId}`}
-                            className="flex items-start justify-between gap-3 rounded-xl bg-white px-3 py-2"
-                          >
-                            <div>
-                              <p className="text-sm font-medium text-gray-800">
-                                {category.emoji} {item.description}
-                              </p>
-                              <p className="mt-0.5 text-xs text-gray-400">
-                                {category.label} · {formatDate(item.date)}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-semibold text-gray-700">
-                                {formatCurrency(item.amount, currency)}
-                              </p>
-                              {item.originalCurrency !== currency && (
-                                <p className="text-xs text-gray-400">
-                                  原始分攤 {formatCurrency(item.originalAmount, item.originalCurrency)}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  </div>
                 </div>
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-        <h3 className="text-sm font-medium text-gray-500 mb-4">
-          📋 個人花費明細
-        </h3>
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <h3 className="mb-1 text-sm font-medium text-gray-500">🧾 依付款關係拆分的品項明細</h3>
+        <p className="mb-4 text-xs text-gray-400">用原始消費資料對照每一筆品項，核對付款原因時最直接。</p>
+        <div className="space-y-4">
+          {pairwiseBreakdowns.map((breakdown) => {
+            const key = `${breakdown.fromMemberId}:${breakdown.toMemberId}`;
+            const isExpanded = expandedBreakdowns[key] ?? false;
+
+            return (
+              <div key={key} className="rounded-2xl border border-gray-100 bg-gray-50/70 p-3 sm:p-4">
+                <button
+                  type="button"
+                  onClick={() => onToggleBreakdown(key)}
+                  className="flex w-full flex-col gap-2 text-left sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <span className="font-medium">{breakdown.from}</span>
+                      <span className="text-gray-300">→</span>
+                      <span className="font-medium">{breakdown.to}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {breakdown.items.length} 筆品項 {isExpanded ? "· 點擊收合" : "· 點擊展開"}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 sm:block sm:text-right">
+                    <p className="text-sm font-semibold text-primary-600">
+                      合計 {formatCurrency(breakdown.amount, currency)}
+                    </p>
+                    <span className="text-sm text-gray-400" aria-hidden="true">
+                      {isExpanded ? "▴" : "▾"}
+                    </span>
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="mt-3 space-y-2">
+                    {breakdown.items.map((item) => {
+                      const category = getCategoryInfo(item.category);
+
+                      return (
+                        <div
+                          key={`${key}-${item.expenseId}`}
+                          className="flex items-start justify-between gap-3 rounded-xl bg-white px-3 py-2"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-gray-800">
+                              {category.emoji} {item.description}
+                            </p>
+                            <p className="mt-0.5 text-xs text-gray-400">
+                              {category.label} · {formatDate(item.date)}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-sm font-semibold text-gray-700">
+                              {formatCurrency(item.amount, currency)}
+                            </p>
+                            {item.originalCurrency !== currency && (
+                              <p className="text-xs text-gray-400">
+                                原始分攤 {formatCurrency(item.originalAmount, item.originalCurrency)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <h3 className="mb-1 text-sm font-medium text-gray-500">👤 依人查看結算明細</h3>
+        <p className="mb-4 text-xs text-gray-400">每個人都可以從自己的角度看待付、待收與對應品項。</p>
+        <div className="space-y-4">
+          {personSettlementGroups.map((group) => (
+            <div key={group.memberId} className="rounded-2xl border border-gray-100 p-3 sm:p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-medium text-gray-800">{group.memberName}</h4>
+                  <p className="mt-1 text-xs text-gray-400">
+                    待付 {formatCurrency(group.totalToPay, currency)} · 待收 {formatCurrency(group.totalToReceive, currency)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2">
+                <div className="rounded-xl bg-red-50/60 p-3">
+                  <h5 className="text-sm font-medium text-red-600">待付款項</h5>
+                  {group.outgoing.length === 0 ? (
+                    <p className="mt-2 text-xs text-gray-400">沒有待付款項</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {group.outgoing.map((item) => (
+                        <div key={`${group.memberId}-${item.toMemberId}`} className="rounded-lg bg-white px-3 py-2">
+                          <p className="text-sm text-gray-700">付給 {item.to}</p>
+                          <p className="text-sm font-semibold text-gray-800">
+                            {formatCurrency(item.amount, currency)}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-400">
+                            {item.items.map((expense) => expense.description).join("、")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-xl bg-green-50/60 p-3">
+                  <h5 className="text-sm font-medium text-green-600">待收款項</h5>
+                  {group.incoming.length === 0 ? (
+                    <p className="mt-2 text-xs text-gray-400">沒有待收款項</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {group.incoming.map((item) => (
+                        <div key={`${group.memberId}-${item.fromMemberId}`} className="rounded-lg bg-white px-3 py-2">
+                          <p className="text-sm text-gray-700">向 {item.from} 收款</p>
+                          <p className="text-sm font-semibold text-gray-800">
+                            {formatCurrency(item.amount, currency)}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-400">
+                            {item.items.map((expense) => expense.description).join("、")}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <h3 className="mb-4 text-sm font-medium text-gray-500">✅ 已付款紀錄</h3>
+        {payments.length === 0 ? (
+          <p className="text-sm text-gray-400">目前尚未標記任何付款完成。</p>
+        ) : (
+          <div className="space-y-3">
+            {payments.map((payment) => (
+              <div key={payment.id} className="flex flex-col gap-3 rounded-xl border border-gray-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">
+                    {payment.fromMember.name} → {payment.toMember.name}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    {formatDate(payment.settledAt)} · {payment.settledBy.name} 標記 · {payment.status === "completed" ? "已完成" : "已取消"}
+                  </p>
+                  {payment.note && <p className="mt-1 text-xs text-gray-400">備註：{payment.note}</p>}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <span className="font-semibold text-gray-700">{formatCurrency(payment.amount, payment.currency)}</span>
+                  <button
+                    onClick={() =>
+                      onTogglePaymentStatus(
+                        payment.id,
+                        payment.status === "completed" ? "cancelled" : "completed"
+                      )
+                    }
+                    disabled={processingPayment === payment.id}
+                    className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700 active:bg-gray-50 disabled:text-gray-300"
+                  >
+                    {processingPayment === payment.id
+                      ? "處理中..."
+                      : payment.status === "completed"
+                      ? "撤銷"
+                      : "恢復"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <h3 className="mb-4 text-sm font-medium text-gray-500">📋 個人花費明細</h3>
         <div className="space-y-2">
-          {members.map((m) => {
+          {members.map((member) => {
             const paid = expenses
-              .filter((e) => e.paidBy.id === m.id)
-              .reduce((sum, e) => sum + e.amount * e.exchangeRate, 0);
-            const owed = expenses.reduce((sum, e) => {
-              const split = e.splits.find((s) => s.member.id === m.id);
-              return sum + (split ? split.amount * e.exchangeRate : 0);
+              .filter((expense) => expense.paidBy.id === member.id)
+              .reduce((sum, expense) => sum + expense.amount * expense.exchangeRate, 0);
+            const owed = expenses.reduce((sum, expense) => {
+              const split = expense.splits.find((item) => item.member.id === member.id);
+              return sum + (split ? split.amount * expense.exchangeRate : 0);
             }, 0);
             const balance = paid - owed;
 
             return (
-              <div
-                key={m.id}
-                className="flex items-center justify-between py-2"
-              >
+              <div key={member.id} className="flex items-center justify-between py-2">
                 <div className="flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-accent-100 text-accent-700 text-xs flex items-center justify-center font-medium">
-                    {m.name[0]}
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-100 text-xs font-medium text-accent-700">
+                    {member.name[0]}
                   </span>
-                  <span className="text-gray-700">{m.name}</span>
+                  <span className="text-gray-700">{member.name}</span>
                 </div>
+
                 <div className="text-right">
-                  <p className="text-sm text-gray-400">
-                    付 {formatCurrency(paid, currency)} / 分攤{" "}
-                    {formatCurrency(owed, currency)}
+                  <p className="text-xs text-gray-400 sm:text-sm">
+                    付 {formatCurrency(paid, currency)} / 分攤 {formatCurrency(owed, currency)}
                   </p>
                   <p
-                    className={`text-sm font-medium ${
-                      balance > 0
-                        ? "text-green-600"
-                        : balance < 0
-                        ? "text-red-500"
-                        : "text-gray-400"
+                    className={`text-xs font-medium sm:text-sm ${
+                      balance > 0 ? "text-green-600" : balance < 0 ? "text-red-500" : "text-gray-400"
                     }`}
                   >
                     {balance > 0
@@ -1129,19 +1802,11 @@ function SettlementView({
   );
 }
 
-function StatsView({
-  expenses,
-  currency,
-  getCategoryInfo,
-}: {
-  expenses: Expense[];
-  currency: string;
-  getCategoryInfo: (v: string) => { label: string; emoji: string };
-}) {
+function StatsView({ expenses, currency }: { expenses: Expense[]; currency: string }) {
   if (expenses.length === 0) {
     return (
-      <div className="text-center py-12">
-        <div className="text-5xl mb-3">📊</div>
+      <div className="py-12 text-center">
+        <div className="mb-3 text-5xl">📊</div>
         <p className="text-gray-400">沒有消費數據可以統計</p>
       </div>
     );
@@ -1150,18 +1815,15 @@ function StatsView({
   const categoryTotals: Record<string, number> = {};
   const dailyTotals: Record<string, number> = {};
 
-  expenses.forEach((e) => {
-    const amountInBase = e.amount * e.exchangeRate;
-    categoryTotals[e.category] =
-      (categoryTotals[e.category] || 0) + amountInBase;
-    const dateKey = new Date(e.date).toISOString().split("T")[0];
+  expenses.forEach((expense) => {
+    const amountInBase = expense.amount * expense.exchangeRate;
+    categoryTotals[expense.category] = (categoryTotals[expense.category] || 0) + amountInBase;
+    const dateKey = new Date(expense.date).toISOString().split("T")[0];
     dailyTotals[dateKey] = (dailyTotals[dateKey] || 0) + amountInBase;
   });
 
-  const sortedCategories = Object.entries(categoryTotals).sort(
-    ([, a], [, b]) => b - a
-  );
-  const total = sortedCategories.reduce((sum, [, v]) => sum + v, 0);
+  const sortedCategories = Object.entries(categoryTotals).sort(([, a], [, b]) => b - a);
+  const total = sortedCategories.reduce((sum, [, value]) => sum + value, 0);
   const colors = [
     "bg-primary-500",
     "bg-accent-500",
@@ -1174,47 +1836,37 @@ function StatsView({
     "bg-teal-500",
   ];
 
-  const sortedDays = Object.entries(dailyTotals).sort(
-    ([a], [b]) => a.localeCompare(b)
-  );
-  const maxDaily = Math.max(...sortedDays.map(([, v]) => v));
+  const sortedDays = Object.entries(dailyTotals).sort(([a], [b]) => a.localeCompare(b));
+  const maxDaily = Math.max(...sortedDays.map(([, value]) => value));
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-        <h3 className="text-sm font-medium text-gray-500 mb-4">
-          🥧 消費類別分佈
-        </h3>
-        <div className="flex rounded-full overflow-hidden h-4 mb-4">
-          {sortedCategories.map(([cat, amount], i) => (
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <h3 className="mb-4 text-sm font-medium text-gray-500">🥧 消費類別分佈</h3>
+        <div className="mb-4 flex h-4 overflow-hidden rounded-full">
+          {sortedCategories.map(([category, amount], index) => (
             <div
-              key={cat}
-              className={`${colors[i % colors.length]} transition-all`}
+              key={category}
+              className={`${colors[index % colors.length]} transition-all`}
               style={{ width: `${(amount / total) * 100}%` }}
             />
           ))}
         </div>
         <div className="space-y-2">
-          {sortedCategories.map(([cat, amount], i) => {
-            const info = getCategoryInfo(cat);
-            const pct = ((amount / total) * 100).toFixed(1);
+          {sortedCategories.map(([category, amount], index) => {
+            const info = getCategoryInfo(category);
+            const percentage = ((amount / total) * 100).toFixed(1);
             return (
-              <div key={cat} className="flex items-center justify-between">
+              <div key={category} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`w-3 h-3 rounded-full ${
-                      colors[i % colors.length]
-                    }`}
-                  />
+                  <span className={`h-3 w-3 shrink-0 rounded-full ${colors[index % colors.length]}`} />
                   <span className="text-sm text-gray-600">
                     {info.emoji} {info.label}
                   </span>
                 </div>
                 <div className="text-right">
-                  <span className="text-sm font-medium text-gray-700">
-                    {formatCurrency(amount, currency)}
-                  </span>
-                  <span className="text-xs text-gray-400 ml-2">{pct}%</span>
+                  <span className="text-sm font-medium text-gray-700">{formatCurrency(amount, currency)}</span>
+                  <span className="ml-2 text-xs text-gray-400">{percentage}%</span>
                 </div>
               </div>
             );
@@ -1222,31 +1874,93 @@ function StatsView({
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-        <h3 className="text-sm font-medium text-gray-500 mb-4">
-          📈 每日花費趨勢
-        </h3>
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
+        <h3 className="mb-4 text-sm font-medium text-gray-500">📈 每日花費趨勢</h3>
         <div className="space-y-2">
           {sortedDays.map(([day, amount]) => (
-            <div key={day} className="flex items-center gap-3">
-              <span className="text-xs text-gray-400 w-20">
-                {day.slice(5)}
-              </span>
-              <div className="flex-1 bg-gray-50 rounded-full h-6 overflow-hidden">
+            <div key={day} className="flex items-center gap-2 sm:gap-3">
+              <span className="w-14 shrink-0 text-xs text-gray-400 sm:w-20">{day.slice(5)}</span>
+              <div className="h-6 flex-1 overflow-hidden rounded-full bg-gray-50">
                 <div
-                  className="bg-gradient-to-r from-primary-400 to-primary-500 h-full rounded-full flex items-center justify-end pr-2 transition-all"
-                  style={{
-                    width: `${Math.max((amount / maxDaily) * 100, 10)}%`,
-                  }}
+                  className="flex h-full items-center justify-end rounded-full bg-gradient-to-r from-primary-400 to-primary-500 pr-2 transition-all"
+                  style={{ width: `${Math.max((amount / maxDaily) * 100, 10)}%` }}
                 >
-                  <span className="text-xs text-white font-medium">
-                    {formatCurrency(amount, currency)}
-                  </span>
+                  <span className="text-xs font-medium text-white">{formatCurrency(amount, currency)}</span>
                 </div>
               </div>
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ActivityView({
+  activities,
+  loading,
+  onRefresh,
+}: {
+  activities: ActivityLog[];
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-gray-400">
+        <div className="mb-3 text-4xl animate-bounce">📜</div>
+        <p>載入操作紀錄...</p>
+      </div>
+    );
+  }
+
+  if (activities.length === 0) {
+    return (
+      <div className="py-12 text-center">
+        <div className="mb-3 text-5xl">📜</div>
+        <p className="text-gray-400">目前還沒有操作紀錄</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-sm font-medium text-gray-500">最近操作紀錄</h3>
+        <button
+          onClick={onRefresh}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700"
+        >
+          🔄 重新整理
+        </button>
+      </div>
+      <div className="space-y-2">
+        {activities.map((activity) => (
+          <div
+            key={activity.id}
+            className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4"
+          >
+            <span className="mt-0.5 shrink-0 text-xl">{getActivityEmoji(activity.action)}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-gray-700">
+                <span className="font-medium">{activity.user?.name || "系統"}</span>
+                {" "}
+                {getActivityLabel(activity.action)}
+              </p>
+              {activity.details && (
+                <p className="mt-0.5 truncate text-xs text-gray-400">{activity.details}</p>
+              )}
+              <p className="mt-1 text-xs text-gray-300">
+                {new Date(activity.createdAt).toLocaleString("zh-TW", {
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -1,36 +1,95 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbidden, requireUser } from "@/lib/auth";
 
-export async function GET(
-  _request: Request,
-  { params }: { params: { tripId: string } }
-) {
-  const trip = await prisma.trip.findUnique({
-    where: { id: params.tripId },
+async function getTripForUser(tripId: string, userId: string) {
+  return prisma.trip.findFirst({
+    where: {
+      id: tripId,
+      OR: [{ ownerId: userId }, { members: { some: { userId } } }],
+    },
     include: {
-      members: true,
+      owner: true,
+      members: {
+        include: { user: true },
+      },
       expenses: {
-        include: { paidBy: true, splits: { include: { member: true } } },
+        include: {
+          paidBy: { include: { user: true } },
+          createdBy: true,
+          splits: { include: { member: { include: { user: true } } } },
+        },
         orderBy: { date: "desc" },
+      },
+      payments: {
+        include: {
+          fromMember: true,
+          toMember: true,
+          settledBy: true,
+        },
+        orderBy: { settledAt: "desc" },
       },
     },
   });
+}
+
+export async function GET(
+  request: Request,
+  { params }: { params: { tripId: string } }
+) {
+  const { user, error } = await requireUser(request);
+  if (error || !user) return error;
+
+  const trip = await getTripForUser(params.tripId, user.id);
 
   if (!trip) {
-    return NextResponse.json({ error: "旅程不存在" }, { status: 404 });
+    return NextResponse.json({ error: "找不到此旅程" }, { status: 404 });
   }
 
-  return NextResponse.json(trip);
+  const currentMember = trip.members.find((member) => member.userId === user.id) ?? null;
+
+  return NextResponse.json({
+    ...trip,
+    permissions: {
+      isOwner: trip.ownerId === user.id,
+      canManageMembers: trip.ownerId === user.id,
+      canDeleteTrip: trip.ownerId === user.id,
+      canAddExpense: Boolean(currentMember) || trip.ownerId === user.id,
+    },
+    currentUser: user,
+    currentMemberId: currentMember?.id ?? null,
+  });
 }
 
 export async function PATCH(
   request: Request,
   { params }: { params: { tripId: string } }
 ) {
-  const body = await request.json();
-  const { name, description, destination, startDate, endDate, currency, coverEmoji } = body;
+  const { user, error } = await requireUser(request);
+  if (error || !user) return error;
 
-  const trip = await prisma.trip.update({
+  const trip = await prisma.trip.findUnique({ where: { id: params.tripId } });
+
+  if (!trip) {
+    return NextResponse.json({ error: "旅程不存在" }, { status: 404 });
+  }
+
+  if (trip.ownerId !== user.id) {
+    return forbidden("只有旅程建立者可以修改旅程");
+  }
+
+  const body = await request.json();
+  const {
+    name,
+    description,
+    destination,
+    startDate,
+    endDate,
+    currency,
+    coverEmoji,
+  } = body;
+
+  const updatedTrip = await prisma.trip.update({
     where: { id: params.tripId },
     data: {
       ...(name && { name }),
@@ -44,13 +103,26 @@ export async function PATCH(
     include: { members: true },
   });
 
-  return NextResponse.json(trip);
+  return NextResponse.json(updatedTrip);
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: { tripId: string } }
 ) {
+  const { user, error } = await requireUser(request);
+  if (error || !user) return error;
+
+  const trip = await prisma.trip.findUnique({ where: { id: params.tripId } });
+
+  if (!trip) {
+    return NextResponse.json({ error: "旅程不存在" }, { status: 404 });
+  }
+
+  if (trip.ownerId !== user.id) {
+    return forbidden("只有旅程建立者可以刪除旅程");
+  }
+
   await prisma.trip.delete({ where: { id: params.tripId } });
   return NextResponse.json({ success: true });
 }

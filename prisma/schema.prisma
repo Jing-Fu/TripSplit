@@ -17,24 +17,58 @@ model Trip {
   currency    String   @default("TWD")
   inviteCode  String   @unique
   coverEmoji  String   @default("✈️")
+  ownerId     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  owner    User?               @relation("TripOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members  Member[]
   expenses Expense[]
+  payments SettlementPayment[]
+  activityLogs ActivityLog[]
+}
+
+model User {
+  id              String              @id @default(cuid())
+  email           String              @unique
+  name            String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  ownedTrips      Trip[]              @relation("TripOwner")
+  members         Member[]
+  createdExpenses Expense[]           @relation("ExpenseCreator")
+  sessions        Session[]
+  settledPayments SettlementPayment[] @relation("SettlementMarkedBy")
+  activityLogs    ActivityLog[]       @relation("ActivityLogUser")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Member {
   id        String   @id @default(cuid())
   name      String
   tripId    String
+  userId    String?
   createdAt DateTime @default(now())
 
-  trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  payments Expense[] @relation("PaidBy")
-  splits   Split[]
+  trip              Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user              User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payments          Expense[]           @relation("PaidBy")
+  splits            Split[]
+  outgoingPayments  SettlementPayment[] @relation("SettlementFromMember")
+  incomingPayments  SettlementPayment[] @relation("SettlementToMember")
 
   @@unique([tripId, name])
+  @@unique([tripId, userId])
 }
 
 model Expense {
@@ -50,12 +84,14 @@ model Expense {
   splitType   String   @default("equal")
   paidById    String
   tripId      String
+  createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  paidBy Member  @relation("PaidBy", fields: [paidById], references: [id], onDelete: Cascade)
-  trip   Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  splits Split[]
+  paidBy    Member  @relation("PaidBy", fields: [paidById], references: [id], onDelete: Cascade)
+  trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation("ExpenseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  splits    Split[]
 }
 
 model Split {
@@ -68,4 +104,42 @@ model Split {
   expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
 
   @@unique([memberId, expenseId])
+}
+
+model SettlementPayment {
+  id          String   @id @default(cuid())
+  tripId      String
+  fromMemberId String
+  toMemberId  String
+  amount      Float
+  currency    String
+  note        String?
+  status      String   @default("completed")
+  settledById String
+  settledAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  trip      Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fromMember Member @relation("SettlementFromMember", fields: [fromMemberId], references: [id], onDelete: Cascade)
+  toMember   Member @relation("SettlementToMember", fields: [toMemberId], references: [id], onDelete: Cascade)
+  settledBy User   @relation("SettlementMarkedBy", fields: [settledById], references: [id], onDelete: Cascade)
+
+  @@index([tripId, status])
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  tripId     String
+  userId     String?
+  action     String
+  targetType String
+  targetId   String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  trip Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User? @relation("ActivityLogUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tripId, createdAt])
 }

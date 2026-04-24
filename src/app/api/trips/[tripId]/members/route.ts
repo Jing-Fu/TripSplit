@@ -1,33 +1,61 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { forbidden, requireUser } from "@/lib/auth";
+import { getAvailableName } from "@/lib/utils";
+import { logActivity } from "@/lib/activity";
 
 export async function POST(
   request: Request,
   { params }: { params: { tripId: string } }
 ) {
-  const body = await request.json();
-  const { name } = body;
+  const { user, error } = await requireUser(request);
+  if (error || !user) return error;
 
-  if (!name) {
+  const trip = await prisma.trip.findUnique({
+    where: { id: params.tripId },
+    include: { members: true },
+  });
+
+  if (!trip) {
+    return NextResponse.json({ error: "旅程不存在" }, { status: 404 });
+  }
+
+  if (trip.ownerId !== user.id) {
+    return forbidden("只有旅程建立者可以新增成員");
+  }
+
+  const body = await request.json();
+  const preferredName = body.name?.trim();
+
+  if (!preferredName) {
     return NextResponse.json({ error: "名稱為必填" }, { status: 400 });
   }
 
-  const existing = await prisma.member.findUnique({
-    where: { tripId_name: { tripId: params.tripId, name } },
-  });
-
-  if (existing) {
-    return NextResponse.json({ error: "此成員已存在" }, { status: 409 });
-  }
+  const name = getAvailableName(
+    preferredName,
+    trip.members.map((member) => member.name)
+  );
 
   const member = await prisma.member.create({
     data: { name, tripId: params.tripId },
+  });
+
+  await logActivity({
+    tripId: params.tripId,
+    userId: user.id,
+    action: "member_added",
+    targetType: "member",
+    targetId: member.id,
+    details: name,
   });
 
   return NextResponse.json(member, { status: 201 });
 }
 
 export async function DELETE(request: Request) {
+  const { user, error } = await requireUser(request);
+  if (error || !user) return error;
+
   const { searchParams } = new URL(request.url);
   const memberId = searchParams.get("memberId");
 
@@ -35,6 +63,36 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "memberId 為必填" }, { status: 400 });
   }
 
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    include: { trip: true },
+  });
+
+  if (!member) {
+    return NextResponse.json({ error: "成員不存在" }, { status: 404 });
+  }
+
+  if (member.trip.ownerId !== user.id) {
+    return forbidden("只有旅程建立者可以移除成員");
+  }
+
+  if (member.userId === user.id) {
+    return NextResponse.json(
+      { error: "建立者自己的成員身份不能直接移除" },
+      { status: 400 }
+    );
+  }
+
   await prisma.member.delete({ where: { id: memberId } });
+
+  await logActivity({
+    tripId: member.trip.id,
+    userId: user.id,
+    action: "member_removed",
+    targetType: "member",
+    targetId: memberId,
+    details: member.name,
+  });
+
   return NextResponse.json({ success: true });
 }
