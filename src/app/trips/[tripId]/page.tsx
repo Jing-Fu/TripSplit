@@ -1512,49 +1512,6 @@ function AddExpenseForm({
 }) {
   const [uploading, setUploading] = useState(false);
   const [rateLoading, setRateLoading] = useState(false);
-  const [ocrProcessing, setOcrProcessing] = useState(false);
-
-  const runOCR = async (imageUrl: string) => {
-    setOcrProcessing(true);
-    try {
-      const { createWorker } = await import("tesseract.js");
-      const worker = await createWorker("chi_tra+eng");
-      const { data } = await worker.recognize(imageUrl);
-      await worker.terminate();
-
-      const text = data.text;
-      const amountMatch = text.match(/(?:NT\$?|TWD|USD|\$|¥|€)\s*([\d,]+\.?\d*)/i) ||
-        text.match(/([\d,]+\.?\d*)\s*(?:元|圓)/i) ||
-        text.match(/(?:total|合計|小計|金額)[:\s]*([\d,]+\.?\d*)/i);
-      const dateMatch = text.match(/(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/) ||
-        text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
-
-      if (amountMatch) {
-        const amount = amountMatch[1].replace(/,/g, "");
-        setForm((prev) => ({ ...prev, amount }));
-      }
-
-      if (dateMatch) {
-        let year: string, month: string, day: string;
-        if (dateMatch[1].length === 4) {
-          [, year, month, day] = dateMatch;
-        } else {
-          [, month, day, year] = dateMatch;
-        }
-        const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-        setForm((prev) => ({ ...prev, date: dateStr }));
-      }
-
-      const firstLine = text.split("\n").find((line) => line.trim().length > 2);
-      if (firstLine && !amountMatch) {
-        setForm((prev) => ({ ...prev, description: firstLine.trim().slice(0, 100) }));
-      }
-    } catch {
-      onError("收據辨識失敗，請手動輸入");
-    } finally {
-      setOcrProcessing(false);
-    }
-  };
 
   const fetchExchangeRate = async (from: string, to: string) => {
     if (from === to) {
@@ -1905,14 +1862,6 @@ function AddExpenseForm({
           <div className="relative">
             <img src={form.receiptUrl} alt="收據" className="max-h-48 w-full rounded-xl object-cover" />
             <div className="absolute right-2 top-2 flex gap-1">
-              <button
-                type="button"
-                onClick={() => runOCR(form.receiptUrl)}
-                disabled={ocrProcessing}
-                className="flex h-8 items-center gap-1 rounded-full bg-blue-500/80 px-3 text-xs text-white hover:bg-blue-600/80 disabled:bg-blue-300/80"
-              >
-                {ocrProcessing ? "辨識中..." : "🔍 OCR 辨識"}
-              </button>
               <button
                 type="button"
                 onClick={() => setForm((prev) => ({ ...prev, receiptUrl: "" }))}
