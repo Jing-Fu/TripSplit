@@ -175,6 +175,7 @@ function getActivityLabel(action: string): string {
     member_removed: "移除成員",
     backup_imported: "匯入備份",
     backup_exported: "匯出備份",
+    notion_exported: "匯出到 Notion",
     notification_generated: "通知產生",
   };
   return map[action] || action;
@@ -191,6 +192,7 @@ function getActivityEmoji(action: string): string {
     member_removed: "👋",
     backup_imported: "♻️",
     backup_exported: "💾",
+    notion_exported: "📝",
     notification_generated: "🔔",
   };
   return map[action] || "📋";
@@ -300,6 +302,7 @@ export default function TripDetailPage() {
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
 
   const [backingUp, setBackingUp] = useState(false);
+  const [exportingToNotion, setExportingToNotion] = useState(false);
 
   const [filters, setFilters] = useState<ExpenseFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
@@ -873,6 +876,34 @@ export default function TripDetailPage() {
     setBackingUp(false);
   };
 
+  const exportToNotion = async () => {
+    if (!trip?.permissions.isOwner) return;
+
+    setExportingToNotion(true);
+    const res = await safeFetch(`/api/trips/${tripId}/notion`, { method: "POST" });
+
+    if (res.status === 0) {
+      showError("網路連線失敗，請檢查網路後重試");
+      setExportingToNotion(false);
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "匯出到 Notion 失敗" }));
+      showError(data.error || "匯出到 Notion 失敗");
+      setExportingToNotion(false);
+      return;
+    }
+
+    const data = (await res.json().catch(() => null)) as { pageUrl?: string } | null;
+    if (data?.pageUrl) {
+      window.open(data.pageUrl, "_blank", "noopener,noreferrer");
+    }
+
+    alert("已成功匯出到 Notion！");
+    setExportingToNotion(false);
+  };
+
   const exportJSON = () => {
     if (!trip) return;
     const data = buildTripExportJSON(trip);
@@ -1147,6 +1178,9 @@ export default function TripDetailPage() {
                 onExportPDF={exportPDF}
                 onExportImage={exportSettlementImage}
                 customCategories={customCategories}
+                canExportToNotion={trip.permissions.isOwner}
+                exportingToNotion={exportingToNotion}
+                onExportToNotion={exportToNotion}
               />
               {trip.permissions.isOwner && (
                 <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
@@ -1929,6 +1963,9 @@ function SettlementView({
   onExportPDF,
   onExportImage,
   customCategories,
+  canExportToNotion,
+  exportingToNotion,
+  onExportToNotion,
 }: {
   currency: string;
   totalExpenses: number;
@@ -1949,6 +1986,9 @@ function SettlementView({
   onExportPDF: () => void;
   onExportImage: () => void;
   customCategories: { id: string; value: string; label: string; emoji: string }[];
+  canExportToNotion: boolean;
+  exportingToNotion: boolean;
+  onExportToNotion: () => void;
 }) {
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
   const specialExpenses = expenses.filter((expense) => expense.settlementMode !== "normal");
@@ -2000,6 +2040,15 @@ function SettlementView({
             >
               📊 CSV 匯出
             </button>
+            {canExportToNotion && (
+              <button
+                onClick={onExportToNotion}
+                disabled={exportingToNotion}
+                className="rounded-xl border border-stone-200 px-3 py-2 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:border-stone-100 disabled:text-stone-400 sm:text-sm"
+              >
+                {exportingToNotion ? "📝 匯出中..." : "📝 匯出到 Notion"}
+              </button>
+            )}
           </div>
         </div>
 

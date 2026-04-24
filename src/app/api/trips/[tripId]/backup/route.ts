@@ -1,88 +1,11 @@
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createNotificationsForTrip } from "@/lib/notifications";
-
-async function getTripForUser(tripId: string, userId: string) {
-  return prisma.trip.findFirst({
-    where: {
-      id: tripId,
-      OR: [{ ownerId: userId }, { members: { some: { userId } } }],
-    },
-    include: {
-      members: {
-        orderBy: { createdAt: "asc" },
-      },
-      expenses: {
-        include: {
-          paidBy: true,
-          splits: {
-            include: {
-              member: true,
-            },
-          },
-        },
-        orderBy: { date: "desc" },
-      },
-      payments: {
-        include: {
-          fromMember: true,
-          toMember: true,
-        },
-        orderBy: { settledAt: "desc" },
-      },
-    },
-  });
-}
-
-function buildTripExportJSON(trip: Awaited<ReturnType<typeof getTripForUser>>) {
-  if (!trip) {
-    return null;
-  }
-
-  return {
-    exportedAt: new Date().toISOString(),
-    trip: {
-      name: trip.name,
-      description: trip.description,
-      destination: trip.destination,
-      startDate: trip.startDate.toISOString(),
-      endDate: trip.endDate ? trip.endDate.toISOString() : null,
-      currency: trip.currency,
-      coverEmoji: trip.coverEmoji,
-    },
-    members: trip.members.map((member) => ({ name: member.name })),
-    expenses: trip.expenses.map((expense) => ({
-      description: expense.description,
-      amount: expense.amount,
-      currency: expense.currency,
-      exchangeRate: expense.exchangeRate,
-      category: expense.category,
-      date: expense.date.toISOString(),
-      paidBy: expense.paidBy.name,
-      splitType: expense.splitType,
-      note: expense.note,
-      settlementMode: expense.settlementMode,
-      settlementNote: expense.settlementNote,
-      splits: expense.splits.map((split) => ({
-        member: split.member.name,
-        amount: split.amount,
-      })),
-    })),
-    payments: trip.payments.map((payment) => ({
-      from: payment.fromMember.name,
-      to: payment.toMember.name,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: payment.status,
-      settledAt: payment.settledAt.toISOString(),
-      note: payment.note,
-    })),
-  };
-}
+import { prisma } from "@/lib/prisma";
+import { buildTripExportJSON, getTripForUser } from "@/lib/trip-export";
 
 export async function GET(
   request: Request,
@@ -119,10 +42,6 @@ export async function POST(
   }
 
   const payload = buildTripExportJSON(trip);
-
-  if (!payload) {
-    return NextResponse.json({ error: "無法建立備份" }, { status: 500 });
-  }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const fileName = `${params.tripId}-${timestamp}.json`;

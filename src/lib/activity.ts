@@ -10,6 +10,7 @@ export type ActivityAction =
   | "member_removed"
   | "backup_imported"
   | "backup_exported"
+  | "notion_exported"
   | "notification_generated";
 
 export async function logActivity(params: {
