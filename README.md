@@ -1,131 +1,134 @@
-# TripSplit - 旅遊分帳工具
+# TripSplit
 
-TripSplit 是一個專為旅伴設計的旅遊支出追蹤與分帳 Web App。讓你在旅途中輕鬆記錄每一筆消費，自動計算匯率，並在旅程結束時提供最佳的結算方案、付款追蹤、通知與備份還原能力。
+A self-hosted travel expense tracker and bill-splitting web app for groups. Record expenses on the go, handle multi-currency with live exchange rates, and get an optimized settlement plan at the end of your trip.
 
-## 核心功能
+## Features
 
-- **旅程管理**：建立新旅程，設定目的地、日期及基礎幣別。
-- **身份與權限**：支援登入、旅程建立者權限與成員身份綁定。
-- **邀請與加入**：透過唯一的邀請碼，讓旅伴快速加入同一趟旅程。
-- **多幣別記帳**：支援多種外幣記錄，自動查詢並轉換為旅程基礎幣別匯率。
-- **彈性分帳**：支援均分、由付款人承擔、按比例或具體金額分帳。
-- **費用編輯與搜尋**：可編輯既有費用，並依關鍵字、日期、類別與付款人篩選。
-- **收據上傳**：可拍照或上傳收據照片，方便日後核對。
-- **自動結算**：一鍵計算所有成員間的欠款關係，提供最少轉帳次數的結算建議。
-- **特殊結算處理**：可將費用標記為保留記帳但不納入結算，或標註為線下處理 / 私人支出。
-- **付款狀態追蹤**：可標記結算為已付款、附加備註，並支援撤銷 / 恢復付款狀態。
-- **依人查看 / 匯出結算明細**：支援依付款關係與依人成員兩種視角查看，並可匯出 TXT / CSV / JSON。
-- **旅程總結與統計分析**：提供旅程亮點、最高支出日、最大單筆消費與類別統計。
-- **活動紀錄與站內通知**：保留重要操作紀錄，並在首頁顯示通知中心。
-- **備份與還原**：可匯出 JSON 備份，並從備份檔還原成新的旅程。
+**Expense tracking**
+- Add, edit, and delete expenses with categories, notes, and receipt photos
+- Multi-currency support with automatic exchange rate lookup
+- Custom expense categories per trip
+- Keyword, category, payer, and date-range filtering
 
-## 技術棧
+**Flexible bill splitting**
+- Equal split, payer-only, percentage, or exact-amount per member
+- Mark expenses as excluded from settlement, handled offline, or partially settled
 
-- **框架**：[Next.js 14 (App Router)](https://nextjs.org/)
-- **語言**：TypeScript
-- **樣式**：Tailwind CSS
-- **資料庫**：SQLite (透過 Prisma ORM)
-- **圖表**：Recharts
-- **日期處理**：date-fns
+**Settlement**
+- Minimized-transfer settlement algorithm
+- Per-person breakdown — see who owes whom and why
+- Mark payments as completed, add notes, and undo
+- Export as TXT, CSV, JSON, PDF, or image
 
-## 開始使用
+**Collaboration**
+- Invite members via a unique invite code
+- Role-based permissions — trip owner controls members and categories
+- In-app notification centre with per-user preference toggles
+- Full activity log per trip
 
-### 環境需求
+**Backup & restore**
+- Export a full JSON backup from the client or trigger a server-side backup
+- Re-import any JSON backup as a new trip
+
+**Internationalisation**
+- zh-TW and English UI (`LocaleProvider` + typed `t()` helper)
+- Locale preference persisted to `localStorage`
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 14 (App Router) |
+| Language | TypeScript |
+| Styling | Tailwind CSS |
+| Database | SQLite via Prisma ORM |
+| Validation | Zod |
+| Charts | Recharts |
+| Export | jsPDF + html2canvas |
+| Date handling | date-fns |
+
+## Getting started
+
+### Prerequisites
 
 - Node.js 18+
 
-### 安裝步驟
+### Setup
 
-1. 安裝依賴套件：
+1. Install dependencies:
    ```bash
    npm install
    ```
 
-2. 設定環境變數：
-   建立一個 `.env` 檔案並設定資料庫路徑：
+2. Create a `.env` file:
    ```env
    DATABASE_URL="file:./dev.db"
    ```
 
-3. 初始化資料庫（Prisma）：
+3. Initialise the database:
    ```bash
    npx prisma generate
    npx prisma db push
    ```
 
-4. 啟動開發伺服器：
+4. Start the development server:
    ```bash
    npm run dev
    ```
 
-5. 開啟瀏覽器並造訪 `http://localhost:3000`。
+5. Open [http://localhost:3000](http://localhost:3000) and sign in at `/login`.
 
-6. 首次使用請先前往 `/login` 建立或登入帳號。
+> [!NOTE]
+> The first time you visit `/login`, enter any email and a display name — the system will create your account automatically.
 
-## 專案結構
+## Project structure
 
-- `src/app`: Next.js App Router 路由與頁面
-- `src/app/api`: API 路由（包含登入、通知、備份還原、匯率查詢、檔案上傳、旅程與消費 CRUD）
-- `src/components`: UI 元件
-- `src/lib`: 工具函式、結算邏輯、通知 / activity helper 與常數設定
-- `prisma`: 資料庫模型定義與遷移檔案
-- `public`: 靜態檔案儲存處
+```
+src/
+├── app/
+│   ├── api/                # API routes (auth, trips, expenses, members,
+│   │   │                   #   payments, notifications, upload, exchange-rate)
+│   ├── trips/[tripId]/     # Trip detail page (expenses, settlement, stats, summary)
+│   ├── trips/new/          # New trip creation
+│   ├── login/              # Authentication
+│   └── page.tsx            # Home — trip list, notifications, backup import
+├── lib/
+│   ├── settlement.ts       # Settlement calculation logic
+│   ├── validations.ts      # Zod schemas for all API inputs
+│   ├── fetch.ts            # Centralised safeFetch with error handling
+│   ├── notifications.ts    # Notification creation with preference filtering
+│   ├── i18n/               # LocaleProvider, useLocale(), zh-TW + en dictionaries
+│   └── constants.ts        # Default expense categories, currencies, split types
+└── prisma/
+    └── schema.prisma       # Data models
+```
 
-## 主要使用流程
+## Data models
 
-### 1. 登入與建立旅程
+| Model | Purpose |
+|---|---|
+| `Trip` | A travel group with currency, invite code, and owner |
+| `Member` | A person in a trip, optionally linked to a `User` |
+| `Expense` | An expense with splits, settlement mode, and optional receipt |
+| `Split` | Per-member share of an expense |
+| `SettlementPayment` | A recorded payment between two members |
+| `ActivityLog` | Immutable audit trail for all trip operations |
+| `Notification` | In-app notification, filtered by `NotificationPreference` |
+| `CustomCategory` | Trip-scoped user-defined expense category |
+| `BackupRecord` | Metadata for server-side backup files |
 
-- 使用 email + 顯示名稱登入
-- 建立旅程後，建立者會自動成為旅程 owner 與第一位成員
-- 其他旅伴可透過邀請碼加入
+## Development commands
 
-### 2. 記帳與特殊結算規則
+```bash
+npm run dev          # Start development server
+npm run build        # Production build
+npm run start        # Serve production build
+npm run lint         # ESLint check
+npx prisma studio    # Open database GUI
+```
 
-- 可新增與編輯費用
-- 可設定平均分攤、按比例、自訂金額、付款人自付
-- 可在費用上設定：
-  - 正常納入結算
-  - 保留記帳，但不納入結算
-  - 已線下處理 / 私人支出
+## Known limitations
 
-### 3. 結算與付款追蹤
-
-- 系統會計算待結算轉帳建議
-- 使用者可把建議標記為已付款
-- 標記付款時可加上備註
-- 已付款紀錄會自動影響後續待結算結果
-
-### 4. 匯出與還原
-
-- 可匯出：
-  - TXT 結算明細
-  - CSV 費用清單
-  - JSON 備份
-- 可在首頁匯入 JSON 備份，系統會建立一份新的還原旅程
-
-### 5. 通知與紀錄
-
-- 首頁提供通知中心
-- 旅程頁提供活動紀錄
-- 重要操作如新增費用、成員變動、付款狀態更新都會記錄
-
-## 開發指令
-
-- `npm run dev`: 啟動開發環境
-- `npm run build`: 編譯正式版本
-- `npm run start`: 執行編譯後的正式版本
-- `npm run lint`: 執行 ESLint 檢查
-- `npx prisma studio`: 開啟 Prisma 資料庫視覺化管理介面
-
-## 目前仍待補強的方向
-
-- 更完整的欄位級錯誤處理與流程恢復
-- 通知機制可進一步擴充成 email / push
-- 收據 OCR
-- 自訂消費類別
-- 更完整的多語系與 locale 體驗
-- 備份自動化與真正的還原策略（目前為手動匯出 / 匯入）
-
-## 授權
-
-此專案僅供學術與練習使用。
+- SQLite is used for simplicity; not suitable for multi-instance deployments without a shared filesystem.
+- Email and push notifications are not implemented — only in-app notifications.
+- Automated backup scheduling is not built in; backups must be triggered manually.
