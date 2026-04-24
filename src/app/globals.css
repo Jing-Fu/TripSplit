@@ -5,12 +5,25 @@
 :root {
   --background: #FFF7ED;
   --foreground: #1C1917;
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: "Inter", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer base {
+  input, select, textarea {
+    font-size: 16px;
+  }
+
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
 }
 
 @layer utilities {
@@ -24,5 +37,14 @@ body {
   }
   .no-scrollbar::-webkit-scrollbar {
     display: none;
+  }
+
+  .pb-safe {
+    padding-bottom: max(var(--safe-area-inset-bottom), 1rem);
+  }
+
+  .min-touch {
+    min-height: 44px;
+    min-width: 44px;
   }
 }

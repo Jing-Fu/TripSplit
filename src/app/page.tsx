@@ -49,6 +49,9 @@ export default function HomePage() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [importError, setImportError] = useState("");
   const [importing, setImporting] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState<Record<string, boolean> | null>(null);
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -73,6 +76,13 @@ export default function HomePage() {
         const notificationData = await notificationsRes.json();
         setNotifications(notificationData);
       }
+
+      const prefsRes = await fetch("/api/notifications/preferences");
+      if (prefsRes.ok) {
+        const prefsData = await prefsRes.json();
+        setNotifPrefs(prefsData);
+      }
+
       setLoading(false);
     };
 
@@ -156,6 +166,20 @@ export default function HomePage() {
       setImporting(false);
       event.target.value = "";
     }
+  };
+
+  const toggleNotifPref = async (field: string, value: boolean) => {
+    setSavingPrefs(true);
+    const res = await fetch("/api/notifications/preferences", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setNotifPrefs(data);
+    }
+    setSavingPrefs(false);
   };
 
   return (
@@ -299,6 +323,45 @@ export default function HomePage() {
               </label>
             </div>
             {importError && <p className="mt-3 text-sm text-red-500">{importError}</p>}
+          </div>
+        )}
+
+        {user && (
+          <div className="mb-8 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+            <button onClick={() => setShowSettings(prev => !prev)} className="flex w-full items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-700">⚙️ 通知偏好設定</h2>
+              <span className="text-sm text-gray-400">{showSettings ? "收合" : "展開"}</span>
+            </button>
+            {showSettings && notifPrefs && (
+              <div className="mt-4 space-y-3">
+                {[
+                  { field: "expenseCreated", label: "新增費用" },
+                  { field: "expenseUpdated", label: "修改費用" },
+                  { field: "expenseDeleted", label: "刪除費用" },
+                  { field: "memberAdded", label: "新增成員" },
+                  { field: "memberRemoved", label: "移除成員" },
+                  { field: "paymentMarked", label: "標記付款" },
+                  { field: "paymentUpdated", label: "更新付款" },
+                  { field: "backupImported", label: "匯入備份" },
+                ].map(({ field, label }) => (
+                  <label key={field} className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600">{label}</span>
+                    <button
+                      type="button"
+                      onClick={() => toggleNotifPref(field, !notifPrefs[field])}
+                      disabled={savingPrefs}
+                      className={`relative h-6 w-11 rounded-full transition-colors ${
+                        notifPrefs[field] ? "bg-primary-500" : "bg-gray-300"
+                      }`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                        notifPrefs[field] ? "translate-x-5" : ""
+                      }`} />
+                    </button>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

@@ -27,6 +27,8 @@ model Trip {
   payments SettlementPayment[]
   activityLogs ActivityLog[]
   notifications Notification[]
+  customCategories CustomCategory[]
+  backupRecords    BackupRecord[]
 }
 
 model User {
@@ -43,6 +45,7 @@ model User {
   settledPayments SettlementPayment[] @relation("SettlementMarkedBy")
   activityLogs    ActivityLog[]       @relation("ActivityLogUser")
   notifications   Notification[]
+  notificationPreference NotificationPreference?
 }
 
 model Session {
@@ -162,4 +165,46 @@ model Notification {
   trip Trip? @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt, createdAt])
+}
+
+model CustomCategory {
+  id        String   @id @default(cuid())
+  tripId    String
+  value     String
+  label     String
+  emoji     String   @default("📝")
+  createdAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, value])
+  @@index([tripId])
+}
+
+model NotificationPreference {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  expenseCreated    Boolean @default(true)
+  expenseUpdated    Boolean @default(true)
+  expenseDeleted    Boolean @default(true)
+  memberAdded       Boolean @default(true)
+  memberRemoved     Boolean @default(true)
+  paymentMarked     Boolean @default(true)
+  paymentUpdated    Boolean @default(true)
+  backupImported    Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BackupRecord {
+  id        String   @id @default(cuid())
+  tripId    String
+  fileName  String
+  filePath  String
+  fileSize  Int
+  createdAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, createdAt])
 }

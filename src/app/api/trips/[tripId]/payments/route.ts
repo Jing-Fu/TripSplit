@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createNotificationsForTrip } from "@/lib/notifications";
+import { createPaymentSchema, formatZodErrors } from "@/lib/validations";
 
 export async function POST(
   request: Request,
@@ -28,23 +29,28 @@ export async function POST(
   const body = await request.json();
   const { fromMemberId, toMemberId, amount, note } = body;
 
-  if (!fromMemberId || !toMemberId || !amount) {
-    return NextResponse.json({ error: "缺少付款資料" }, { status: 400 });
+  const result = createPaymentSchema.safeParse(body);
+
+  if (!result.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(result.error) },
+      { status: 400 }
+    );
   }
 
   const validMemberIds = new Set(trip.members.map((member) => member.id));
-  if (!validMemberIds.has(fromMemberId) || !validMemberIds.has(toMemberId)) {
+  if (!validMemberIds.has(result.data.fromMemberId) || !validMemberIds.has(result.data.toMemberId)) {
     return NextResponse.json({ error: "付款雙方必須屬於此旅程" }, { status: 400 });
   }
 
   const payment = await prisma.settlementPayment.create({
     data: {
       tripId: params.tripId,
-      fromMemberId,
-      toMemberId,
-      amount: parseFloat(amount),
+      fromMemberId: result.data.fromMemberId,
+      toMemberId: result.data.toMemberId,
+      amount: result.data.amount,
       currency: trip.currency,
-      note,
+      note: result.data.note,
       settledById: user.id,
     },
     include: {

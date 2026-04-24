@@ -1,5 +1,16 @@
 import { prisma } from "@/lib/prisma";
 
+const TYPE_TO_PREFERENCE_KEY: Record<string, string> = {
+  expense_created: "expenseCreated",
+  expense_updated: "expenseUpdated",
+  expense_deleted: "expenseDeleted",
+  member_added: "memberAdded",
+  member_removed: "memberRemoved",
+  payment_marked: "paymentMarked",
+  payment_updated: "paymentUpdated",
+  backup_imported: "backupImported",
+};
+
 export async function createNotificationsForTrip(params: {
   tripId: string;
   actorUserId: string;
@@ -33,8 +44,31 @@ export async function createNotificationsForTrip(params: {
     return;
   }
 
+  const prefKey = TYPE_TO_PREFERENCE_KEY[params.type];
+  let filteredRecipients = Array.from(recipientIds);
+
+  if (prefKey) {
+    const preferences = await prisma.notificationPreference.findMany({
+      where: {
+        userId: { in: filteredRecipients },
+      },
+    });
+
+    const prefMap = new Map(preferences.map((p) => [p.userId, p]));
+
+    filteredRecipients = filteredRecipients.filter((userId) => {
+      const pref = prefMap.get(userId);
+      if (!pref) return true;
+      return (pref as Record<string, unknown>)[prefKey] !== false;
+    });
+  }
+
+  if (filteredRecipients.length === 0) {
+    return;
+  }
+
   await prisma.notification.createMany({
-    data: Array.from(recipientIds).map((userId) => ({
+    data: filteredRecipients.map((userId) => ({
       userId,
       tripId: params.tripId,
       type: params.type,

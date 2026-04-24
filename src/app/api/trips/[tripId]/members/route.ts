@@ -4,6 +4,7 @@ import { forbidden, requireUser } from "@/lib/auth";
 import { getAvailableName } from "@/lib/utils";
 import { logActivity } from "@/lib/activity";
 import { createNotificationsForTrip } from "@/lib/notifications";
+import { createMemberSchema, formatZodErrors } from "@/lib/validations";
 
 export async function POST(
   request: Request,
@@ -26,14 +27,17 @@ export async function POST(
   }
 
   const body = await request.json();
-  const preferredName = body.name?.trim();
+  const result = createMemberSchema.safeParse({ name: body.name?.trim() });
 
-  if (!preferredName) {
-    return NextResponse.json({ error: "名稱為必填" }, { status: 400 });
+  if (!result.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(result.error) },
+      { status: 400 }
+    );
   }
 
   const name = getAvailableName(
-    preferredName,
+    result.data.name,
     trip.members.map((member) => member.name)
   );
 

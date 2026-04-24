@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createNotificationsForTrip } from "@/lib/notifications";
+import { createExpenseSchema, formatZodErrors } from "@/lib/validations";
 
 export async function POST(
   request: Request,
@@ -12,6 +13,15 @@ export async function POST(
   if (error || !user) return error;
 
   const body = await request.json();
+  const parsed = createExpenseSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(parsed.error) },
+      { status: 400 }
+    );
+  }
+
   const {
     amount,
     currency,
@@ -26,11 +36,7 @@ export async function POST(
     receiptUrl,
     settlementMode,
     settlementNote,
-  } = body;
-
-  if (!amount || !category || !description || !date || !paidById) {
-    return NextResponse.json({ error: "缺少必填欄位" }, { status: 400 });
-  }
+  } = parsed.data;
 
   const trip = await prisma.trip.findUnique({
     where: { id: params.tripId },
@@ -57,7 +63,7 @@ export async function POST(
     return forbidden("你只能以自己的身份建立費用，除非你是旅程建立者");
   }
 
-  const splitPayload = Array.isArray(splits) ? splits : [];
+  const splitPayload = splits || [];
   const validSplitMemberIds = new Set(trip.members.map((member) => member.id));
 
   if (
@@ -71,12 +77,12 @@ export async function POST(
 
   const expense = await prisma.expense.create({
     data: {
-      amount: parseFloat(amount),
+      amount,
       currency: currency || "TWD",
-      exchangeRate: exchangeRate ? parseFloat(exchangeRate) : 1.0,
+      exchangeRate: exchangeRate ?? 1.0,
       category,
       description,
-      note,
+      note: note || null,
       date: new Date(date),
       paidById,
       tripId: params.tripId,

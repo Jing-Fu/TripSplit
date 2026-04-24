@@ -15,6 +15,7 @@ import {
   type SuggestedSettlement,
 } from "@/lib/settlement";
 import { formatCurrency, formatDate, formatDateForInput } from "@/lib/utils";
+import { safeFetch } from "@/lib/fetch";
 
 type User = {
   id: string;
@@ -119,14 +120,12 @@ const createDefaultExpenseForm = (currency = "TWD", paidById = "") => ({
 
 type ExpenseFormState = ReturnType<typeof createDefaultExpenseForm>;
 
-function getCategoryInfo(value: string) {
-  return (
-    EXPENSE_CATEGORIES.find((category) => category.value === value) ?? {
-      value: "other",
-      label: "其他",
-      emoji: "📝",
-    }
-  );
+function getCategoryInfo(value: string, customCats?: { value: string; label: string; emoji: string }[]) {
+  const found = EXPENSE_CATEGORIES.find((category) => category.value === value);
+  if (found) return found;
+  const custom = customCats?.find((c) => c.value === value);
+  if (custom) return custom;
+  return { value: "other", label: "其他", emoji: "📝" };
 }
 
 function buildSplits(
@@ -197,18 +196,6 @@ function getActivityEmoji(action: string): string {
   return map[action] || "📋";
 }
 
-function safeFetch(
-  input: RequestInfo,
-  init?: RequestInit
-): Promise<Response> {
-  return fetch(input, init).catch(() => {
-    return new Response(JSON.stringify({ error: "網路連線失敗，請檢查網路後重試" }), {
-      status: 0,
-      headers: { "Content-Type": "application/json" },
-    });
-  });
-}
-
 function buildTripExportJSON(trip: Trip) {
   return {
     exportedAt: new Date().toISOString(),
@@ -251,7 +238,7 @@ function buildTripExportJSON(trip: Trip) {
   };
 }
 
-function buildTripExportCSV(trip: Trip) {
+function buildTripExportCSV(trip: Trip, customCats?: { value: string; label: string; emoji: string }[]) {
   const header = [
     "日期",
     "說明",
@@ -266,7 +253,7 @@ function buildTripExportCSV(trip: Trip) {
   ].join(",");
 
   const rows = trip.expenses.map((e) => {
-    const cat = getCategoryInfo(e.category);
+    const cat = getCategoryInfo(e.category, customCats);
     return [
       formatDateForInput(e.date),
       `"${e.description.replace(/"/g, '""')}"`,
@@ -312,10 +299,17 @@ export default function TripDetailPage() {
   const [expandedBreakdowns, setExpandedBreakdowns] = useState<Record<string, boolean>>({});
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
 
+  const [backingUp, setBackingUp] = useState(false);
+
   const [filters, setFilters] = useState<ExpenseFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [customCategories, setCustomCategories] = useState<{ id: string; value: string; label: string; emoji: string }[]>([]);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [newCategoryValue, setNewCategoryValue] = useState("");
+  const [newCategoryLabel, setNewCategoryLabel] = useState("");
+  const [newCategoryEmoji, setNewCategoryEmoji] = useState("📝");
 
   const errorTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -374,6 +368,71 @@ export default function TripDetailPage() {
     }
     setActivitiesLoading(false);
   }, [tripId]);
+
+  const fetchCustomCategories = useCallback(async () => {
+    const res = await safeFetch(`/api/trips/${tripId}/categories`);
+    if (res.ok) {
+      const data = await res.json();
+      setCustomCategories(data);
+    }
+  }, [tripId]);
+
+  useEffect(() => {
+    if (trip) {
+      fetchCustomCategories();
+    }
+  }, [trip, fetchCustomCategories]);
+
+  const allCategories = useMemo(() => {
+    const defaults = EXPENSE_CATEGORIES.map((c) => ({
+      value: c.value,
+      label: c.label,
+      emoji: c.emoji,
+      isCustom: false,
+    }));
+    const customs = customCategories.map((c) => ({
+      value: c.value,
+      label: c.label,
+      emoji: c.emoji,
+      isCustom: true,
+    }));
+    return [...defaults, ...customs];
+  }, [customCategories]);
+
+  const addCustomCategory = async () => {
+    if (!newCategoryValue.trim() || !newCategoryLabel.trim()) return;
+    const res = await safeFetch(`/api/trips/${tripId}/categories`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        value: newCategoryValue.trim(),
+        label: newCategoryLabel.trim(),
+        emoji: newCategoryEmoji || "📝",
+      }),
+    });
+    if (res.ok) {
+      setNewCategoryValue("");
+      setNewCategoryLabel("");
+      setNewCategoryEmoji("📝");
+      fetchCustomCategories();
+    } else {
+      const data = await res.json().catch(() => ({ error: "新增類別失敗" }));
+      showError(data.error || "新增類別失敗");
+    }
+  };
+
+  const deleteCustomCategory = async (categoryId: string) => {
+    if (!confirm("確定要刪除此自訂類別？")) return;
+    const res = await safeFetch(`/api/trips/${tripId}/categories/${categoryId}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      fetchCustomCategories();
+    } else {
+      const data = await res.json().catch(() => ({ error: "刪除類別失敗" }));
+      showError(data.error || "刪除類別失敗");
+    }
+  };
 
   useEffect(() => {
     if (tab === "activity") {
@@ -664,6 +723,156 @@ export default function TripDetailPage() {
     downloadFile(content, `${trip.name}-settlement-summary.txt`, "text/plain");
   };
 
+  const exportPDF = async () => {
+    if (!trip) return;
+    const { default: jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 20;
+    const lineHeight = 7;
+    const margin = 15;
+    const contentWidth = pageWidth - margin * 2;
+
+    doc.setFontSize(18);
+    doc.text(`${trip.name} - Settlement Summary`, margin, y);
+    y += lineHeight * 2;
+
+    doc.setFontSize(11);
+    doc.text(`Total: ${formatCurrency(totalExpenses, trip.currency)}`, margin, y);
+    y += lineHeight;
+    doc.text(`Members: ${trip.members.length}`, margin, y);
+    y += lineHeight;
+    doc.text(`Expenses: ${trip.expenses.length}`, margin, y);
+    y += lineHeight * 2;
+
+    doc.setFontSize(14);
+    doc.text("Pending Settlements", margin, y);
+    y += lineHeight;
+
+    doc.setFontSize(10);
+    if (suggestedSettlements.length === 0) {
+      doc.text("No pending settlements.", margin, y);
+      y += lineHeight;
+    } else {
+      suggestedSettlements.forEach((s) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(`${s.from} -> ${s.to}: ${formatCurrency(s.amount, trip.currency)}`, margin, y);
+        y += lineHeight;
+      });
+    }
+
+    y += lineHeight;
+    doc.setFontSize(14);
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.text("Per Person Summary", margin, y);
+    y += lineHeight;
+
+    doc.setFontSize(10);
+    personSettlementGroups.forEach((group) => {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setFontSize(11);
+      doc.text(group.memberName, margin, y);
+      y += lineHeight;
+      doc.setFontSize(9);
+      doc.text(`  To pay: ${formatCurrency(group.totalToPay, trip.currency)} | To receive: ${formatCurrency(group.totalToReceive, trip.currency)}`, margin, y);
+      y += lineHeight;
+
+      group.outgoing.forEach((item) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(`    -> ${item.to}: ${formatCurrency(item.amount, trip.currency)} (${item.items.map((e) => e.description).join(", ")})`, margin, y);
+        y += lineHeight;
+      });
+      y += 2;
+    });
+
+    y += lineHeight;
+    if (y > 250) { doc.addPage(); y = 20; }
+    doc.setFontSize(14);
+    doc.text("Payment Records", margin, y);
+    y += lineHeight;
+
+    doc.setFontSize(10);
+    const completedPayments = trip.payments.filter((p) => p.status === "completed");
+    if (completedPayments.length === 0) {
+      doc.text("No payments recorded.", margin, y);
+    } else {
+      completedPayments.forEach((p) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(`${p.fromMember.name} -> ${p.toMember.name}: ${formatCurrency(p.amount, p.currency)}${p.note ? ` (${p.note})` : ""}`, margin, y);
+        y += lineHeight;
+      });
+    }
+
+    doc.save(`${trip.name}-settlement.pdf`);
+  };
+
+  const exportSettlementImage = async () => {
+    if (!trip) return;
+    const { default: html2canvas } = await import("html2canvas");
+    const container = document.createElement("div");
+    container.style.cssText = "position:absolute;left:-9999px;top:0;width:800px;padding:40px;background:white;font-family:system-ui,sans-serif;";
+
+    const title = document.createElement("h1");
+    title.style.cssText = "font-size:24px;margin-bottom:8px;color:#1a1a1a;";
+    title.textContent = `${trip.coverEmoji} ${trip.name} 結算明細`;
+    container.appendChild(title);
+
+    const meta = document.createElement("p");
+    meta.style.cssText = "font-size:14px;color:#666;margin-bottom:24px;";
+    meta.textContent = `${trip.members.length} 人 · 總計 ${formatCurrency(totalExpenses, trip.currency)}`;
+    container.appendChild(meta);
+
+    if (suggestedSettlements.length > 0) {
+      const h2 = document.createElement("h2");
+      h2.style.cssText = "font-size:18px;margin-bottom:12px;color:#333;";
+      h2.textContent = "待付款結算";
+      container.appendChild(h2);
+
+      suggestedSettlements.forEach((s) => {
+        const row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:space-between;padding:8px 12px;margin-bottom:4px;background:#f9fafb;border-radius:8px;font-size:14px;";
+        row.innerHTML = `<span>${s.from} → ${s.to}</span><strong>${formatCurrency(s.amount, trip.currency)}</strong>`;
+        container.appendChild(row);
+      });
+    } else {
+      const p = document.createElement("p");
+      p.style.cssText = "font-size:14px;color:#22c55e;margin-bottom:16px;";
+      p.textContent = "✅ 所有款項已結清";
+      container.appendChild(p);
+    }
+
+    const footer = document.createElement("p");
+    footer.style.cssText = "margin-top:24px;font-size:11px;color:#aaa;";
+    footer.textContent = `TripSplit · ${new Date().toLocaleDateString("zh-TW")}`;
+    container.appendChild(footer);
+
+    document.body.appendChild(container);
+
+    try {
+      const canvas = await html2canvas(container, { scale: 2, backgroundColor: "#ffffff" });
+      const link = document.createElement("a");
+      link.download = `${trip.name}-settlement.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
+  const triggerBackup = async () => {
+    setBackingUp(true);
+    const res = await safeFetch(`/api/trips/${tripId}/backup`, { method: "POST" });
+    if (res.ok) {
+      showError("");
+      alert("伺服器備份已建立！");
+    } else {
+      const data = await res.json().catch(() => ({ error: "備份失敗" }));
+      showError(data.error || "備份失敗");
+    }
+    setBackingUp(false);
+  };
+
   const exportJSON = () => {
     if (!trip) return;
     const data = buildTripExportJSON(trip);
@@ -672,7 +881,7 @@ export default function TripDetailPage() {
 
   const exportCSV = () => {
     if (!trip) return;
-    const csv = buildTripExportCSV(trip);
+    const csv = buildTripExportCSV(trip, customCategories);
     downloadFile(csv, `${trip.name}-expenses.csv`, "text/csv");
   };
 
@@ -864,7 +1073,7 @@ export default function TripDetailPage() {
           ))}
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4 pb-24 sm:pb-4">
           {tab === "expenses" && (
             <ExpenseList
               expenses={filteredExpenses}
@@ -881,6 +1090,7 @@ export default function TripDetailPage() {
               hasActiveFilters={!!hasActiveFilters}
               onEdit={startEditingExpense}
               onDelete={deleteExpense}
+              customCategories={customCategories}
             />
           )}
 
@@ -897,30 +1107,65 @@ export default function TripDetailPage() {
               onCancel={editingExpenseId ? resetExpenseForm : undefined}
               submitLabel={editingExpenseId ? "儲存費用修改" : "儲存消費"}
               onError={showError}
+              allCategories={allCategories}
+              customCategories={customCategories}
+              showCategoryManager={showCategoryManager}
+              onToggleCategoryManager={() => setShowCategoryManager((prev) => !prev)}
+              newCategoryValue={newCategoryValue}
+              setNewCategoryValue={setNewCategoryValue}
+              newCategoryLabel={newCategoryLabel}
+              setNewCategoryLabel={setNewCategoryLabel}
+              newCategoryEmoji={newCategoryEmoji}
+              setNewCategoryEmoji={setNewCategoryEmoji}
+              onAddCustomCategory={addCustomCategory}
+              onDeleteCustomCategory={deleteCustomCategory}
+              isOwner={trip.permissions.isOwner}
             />
           )}
 
           {tab === "settle" && (
-            <SettlementView
-              currency={trip.currency}
-              totalExpenses={totalExpenses}
-              members={trip.members}
-              expenses={trip.expenses}
-              payments={trip.payments}
-              settlements={suggestedSettlements}
-              pairwiseBreakdowns={pairwiseBreakdowns}
-              personSettlementGroups={personSettlementGroups}
-              expandedBreakdowns={expandedBreakdowns}
-              onToggleBreakdown={(key) =>
-                setExpandedBreakdowns((prev) => ({ ...prev, [key]: !prev[key] }))
-              }
-              onMarkPaid={markSettlementPaid}
-              onTogglePaymentStatus={togglePaymentStatus}
-              processingPayment={processingPayment}
-              onExport={exportSettlementDetails}
-              onExportJSON={exportJSON}
-              onExportCSV={exportCSV}
-            />
+            <>
+              <SettlementView
+                currency={trip.currency}
+                totalExpenses={totalExpenses}
+                members={trip.members}
+                expenses={trip.expenses}
+                payments={trip.payments}
+                settlements={suggestedSettlements}
+                pairwiseBreakdowns={pairwiseBreakdowns}
+                personSettlementGroups={personSettlementGroups}
+                expandedBreakdowns={expandedBreakdowns}
+                onToggleBreakdown={(key) =>
+                  setExpandedBreakdowns((prev) => ({ ...prev, [key]: !prev[key] }))
+                }
+                onMarkPaid={markSettlementPaid}
+                onTogglePaymentStatus={togglePaymentStatus}
+                processingPayment={processingPayment}
+                onExport={exportSettlementDetails}
+                onExportJSON={exportJSON}
+                onExportCSV={exportCSV}
+                onExportPDF={exportPDF}
+                onExportImage={exportSettlementImage}
+                customCategories={customCategories}
+              />
+              {trip.permissions.isOwner && (
+                <div className="mt-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">💾 伺服器備份</h3>
+                      <p className="mt-1 text-xs text-gray-400">建立旅程的完整備份到伺服器</p>
+                    </div>
+                    <button
+                      onClick={triggerBackup}
+                      disabled={backingUp}
+                      className="rounded-xl bg-primary-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-600 disabled:bg-primary-300"
+                    >
+                      {backingUp ? "備份中..." : "建立備份"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {tab === "summary" && (
@@ -928,11 +1173,12 @@ export default function TripDetailPage() {
               trip={trip}
               totalExpenses={totalExpenses}
               settlements={suggestedSettlements}
+              customCategories={customCategories}
             />
           )}
 
           {tab === "stats" && (
-            <StatsView expenses={trip.expenses} currency={trip.currency} />
+            <StatsView expenses={trip.expenses} currency={trip.currency} customCategories={customCategories} />
           )}
 
           {tab === "activity" && (
@@ -944,31 +1190,37 @@ export default function TripDetailPage() {
           )}
         </div>
 
-        <div className="fixed bottom-4 left-4 right-4 z-20 mx-auto flex max-w-md items-center justify-between rounded-2xl border border-gray-100 bg-white/95 px-3 py-2 shadow-lg backdrop-blur sm:hidden">
-          <button
-            onClick={() => setTab("expenses")}
-            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "expenses" ? "bg-primary-500 text-white" : "text-gray-500"}`}
-          >
-            消費
-          </button>
-          <button
-            onClick={() => setTab("add")}
-            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "add" ? "bg-primary-500 text-white" : "text-gray-500"}`}
-          >
-            記帳
-          </button>
-          <button
-            onClick={() => setTab("settle")}
-            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "settle" ? "bg-primary-500 text-white" : "text-gray-500"}`}
-          >
-            結算
-          </button>
-          <button
-            onClick={() => setTab("summary")}
-            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "summary" ? "bg-primary-500 text-white" : "text-gray-500"}`}
-          >
-            總結
-          </button>
+        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-100 bg-white/95 pb-safe backdrop-blur sm:hidden">
+          <div className="mx-auto flex max-w-md items-center justify-between px-3 pt-2">
+            <button
+              onClick={() => setTab("expenses")}
+              className={`min-touch flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${tab === "expenses" ? "text-primary-600 font-medium" : "text-gray-400"}`}
+            >
+              <span className="text-base">📋</span>
+              消費
+            </button>
+            <button
+              onClick={() => setTab("add")}
+              className={`min-touch flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${tab === "add" ? "text-primary-600 font-medium" : "text-gray-400"}`}
+            >
+              <span className="text-base">✏️</span>
+              記帳
+            </button>
+            <button
+              onClick={() => setTab("settle")}
+              className={`min-touch flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${tab === "settle" ? "text-primary-600 font-medium" : "text-gray-400"}`}
+            >
+              <span className="text-base">💰</span>
+              結算
+            </button>
+            <button
+              onClick={() => setTab("summary")}
+              className={`min-touch flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl text-xs transition-colors ${tab === "summary" ? "text-primary-600 font-medium" : "text-gray-400"}`}
+            >
+              <span className="text-base">📊</span>
+              總結
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -990,6 +1242,7 @@ function ExpenseList({
   hasActiveFilters,
   onEdit,
   onDelete,
+  customCategories,
 }: {
   expenses: Expense[];
   allExpenses: Expense[];
@@ -1005,6 +1258,7 @@ function ExpenseList({
   hasActiveFilters: boolean;
   onEdit: (expense: Expense) => void;
   onDelete: (expenseId: string) => void;
+  customCategories: { id: string; value: string; label: string; emoji: string }[];
 }) {
   if (allExpenses.length === 0) {
     return (
@@ -1130,7 +1384,7 @@ function ExpenseList({
       ) : (
         <div className="space-y-3">
           {expenses.map((expense) => {
-            const category = getCategoryInfo(expense.category);
+            const category = getCategoryInfo(expense.category, customCategories);
             const canManage =
               isOwner || expense.createdBy?.id === currentUserId || expense.paidBy.userId === currentUserId;
 
@@ -1152,8 +1406,10 @@ function ExpenseList({
                         <p className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-600">
                           {expense.settlementMode === "exclude"
                             ? "結算排除"
+                            : expense.settlementMode === "partial"
+                            ? `部分結算（${expense.settlementNote || "50"}%）`
                             : "線下處理 / 不納入結算"}
-                          {expense.settlementNote ? `：${expense.settlementNote}` : ""}
+                          {expense.settlementMode !== "partial" && expense.settlementNote ? `：${expense.settlementNote}` : ""}
                         </p>
                       )}
                       {expense.receiptUrl && (
@@ -1215,6 +1471,19 @@ function AddExpenseForm({
   onCancel,
   submitLabel,
   onError,
+  allCategories,
+  customCategories,
+  showCategoryManager,
+  onToggleCategoryManager,
+  newCategoryValue,
+  setNewCategoryValue,
+  newCategoryLabel,
+  setNewCategoryLabel,
+  newCategoryEmoji,
+  setNewCategoryEmoji,
+  onAddCustomCategory,
+  onDeleteCustomCategory,
+  isOwner,
 }: {
   members: Member[];
   tripCurrency: string;
@@ -1227,9 +1496,65 @@ function AddExpenseForm({
   onCancel?: () => void;
   submitLabel: string;
   onError: (msg: string) => void;
+  allCategories: { value: string; label: string; emoji: string; isCustom: boolean }[];
+  customCategories: { id: string; value: string; label: string; emoji: string }[];
+  showCategoryManager: boolean;
+  onToggleCategoryManager: () => void;
+  newCategoryValue: string;
+  setNewCategoryValue: (v: string) => void;
+  newCategoryLabel: string;
+  setNewCategoryLabel: (v: string) => void;
+  newCategoryEmoji: string;
+  setNewCategoryEmoji: (v: string) => void;
+  onAddCustomCategory: () => void;
+  onDeleteCustomCategory: (id: string) => void;
+  isOwner: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   const [rateLoading, setRateLoading] = useState(false);
+  const [ocrProcessing, setOcrProcessing] = useState(false);
+
+  const runOCR = async (imageUrl: string) => {
+    setOcrProcessing(true);
+    try {
+      const { createWorker } = await import("tesseract.js");
+      const worker = await createWorker("chi_tra+eng");
+      const { data } = await worker.recognize(imageUrl);
+      await worker.terminate();
+
+      const text = data.text;
+      const amountMatch = text.match(/(?:NT\$?|TWD|USD|\$|¥|€)\s*([\d,]+\.?\d*)/i) ||
+        text.match(/([\d,]+\.?\d*)\s*(?:元|圓)/i) ||
+        text.match(/(?:total|合計|小計|金額)[:\s]*([\d,]+\.?\d*)/i);
+      const dateMatch = text.match(/(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})/) ||
+        text.match(/(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/);
+
+      if (amountMatch) {
+        const amount = amountMatch[1].replace(/,/g, "");
+        setForm((prev) => ({ ...prev, amount }));
+      }
+
+      if (dateMatch) {
+        let year: string, month: string, day: string;
+        if (dateMatch[1].length === 4) {
+          [, year, month, day] = dateMatch;
+        } else {
+          [, month, day, year] = dateMatch;
+        }
+        const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+        setForm((prev) => ({ ...prev, date: dateStr }));
+      }
+
+      const firstLine = text.split("\n").find((line) => line.trim().length > 2);
+      if (firstLine && !amountMatch) {
+        setForm((prev) => ({ ...prev, description: firstLine.trim().slice(0, 100) }));
+      }
+    } catch {
+      onError("收據辨識失敗，請手動輸入");
+    } finally {
+      setOcrProcessing(false);
+    }
+  };
 
   const fetchExchangeRate = async (from: string, to: string) => {
     if (from === to) {
@@ -1339,9 +1664,20 @@ function AddExpenseForm({
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-gray-600">類別</label>
+          <div className="mb-2 flex items-center justify-between">
+            <label className="text-sm font-medium text-gray-600">類別</label>
+            {isOwner && (
+              <button
+                type="button"
+                onClick={onToggleCategoryManager}
+                className="text-xs text-primary-500 hover:text-primary-700"
+              >
+                {showCategoryManager ? "收合" : "⚙️ 管理類別"}
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
-            {EXPENSE_CATEGORIES.map((category) => (
+            {allCategories.map((category) => (
               <button
                 key={category.value}
                 type="button"
@@ -1349,6 +1685,8 @@ function AddExpenseForm({
                 className={`rounded-xl px-3 py-2 text-sm transition-all ${
                   form.category === category.value
                     ? "bg-primary-500 text-white"
+                    : category.isCustom
+                    ? "bg-purple-50 text-purple-600 hover:bg-purple-100"
                     : "bg-gray-50 text-gray-600 hover:bg-gray-100"
                 }`}
               >
@@ -1356,6 +1694,58 @@ function AddExpenseForm({
               </button>
             ))}
           </div>
+          {showCategoryManager && (
+            <div className="mt-3 rounded-xl border border-purple-100 bg-purple-50/50 p-3">
+              <h4 className="mb-2 text-sm font-medium text-purple-700">自訂類別管理</h4>
+              {customCategories.length > 0 && (
+                <div className="mb-3 space-y-1">
+                  {customCategories.map((cat) => (
+                    <div key={cat.id} className="flex items-center justify-between rounded-lg bg-white px-3 py-2">
+                      <span className="text-sm text-gray-700">{cat.emoji} {cat.label} <span className="text-xs text-gray-400">({cat.value})</span></span>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteCustomCategory(cat.id)}
+                        className="text-xs text-gray-300 hover:text-red-400"
+                      >
+                        刪除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newCategoryEmoji}
+                  onChange={(e) => setNewCategoryEmoji(e.target.value)}
+                  className="w-12 rounded-lg border border-purple-200 px-2 py-1.5 text-center text-sm"
+                  placeholder="📝"
+                  maxLength={4}
+                />
+                <input
+                  type="text"
+                  value={newCategoryValue}
+                  onChange={(e) => setNewCategoryValue(e.target.value)}
+                  className="w-24 rounded-lg border border-purple-200 px-2 py-1.5 text-sm"
+                  placeholder="代碼"
+                />
+                <input
+                  type="text"
+                  value={newCategoryLabel}
+                  onChange={(e) => setNewCategoryLabel(e.target.value)}
+                  className="min-w-0 flex-1 rounded-lg border border-purple-200 px-2 py-1.5 text-sm"
+                  placeholder="顯示名稱"
+                />
+                <button
+                  type="button"
+                  onClick={onAddCustomCategory}
+                  className="rounded-lg bg-purple-500 px-3 py-1.5 text-sm text-white hover:bg-purple-600"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -1407,15 +1797,38 @@ function AddExpenseForm({
             <option value="normal">正常納入結算</option>
             <option value="exclude">保留記帳，但不納入結算</option>
             <option value="external">已線下處理 / 私人支出</option>
+            <option value="partial">部分納入結算（自訂比例）</option>
           </select>
           {form.settlementMode !== "normal" && (
-            <input
-              type="text"
-              value={form.settlementNote}
-              onChange={(e) => setForm((prev) => ({ ...prev, settlementNote: e.target.value }))}
-              className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
-              placeholder="例如：這筆是私人購物 / 已現金處理"
-            />
+            <>
+              {form.settlementMode === "partial" && (
+                <div className="mt-2">
+                  <label className="mb-1 block text-xs text-amber-700">納入結算的比例 (%)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    value={form.settlementNote?.match(/^\d+$/) ? form.settlementNote : "50"}
+                    onChange={(e) => setForm((prev) => ({ ...prev, settlementNote: e.target.value }))}
+                    className="w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    placeholder="50"
+                    inputMode="numeric"
+                  />
+                  <p className="mt-1 text-xs text-amber-600">
+                    此筆費用將有 {form.settlementNote?.match(/^\d+$/) ? form.settlementNote : "50"}% 納入結算
+                  </p>
+                </div>
+              )}
+              {form.settlementMode !== "partial" && (
+                <input
+                  type="text"
+                  value={form.settlementNote}
+                  onChange={(e) => setForm((prev) => ({ ...prev, settlementNote: e.target.value }))}
+                  className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  placeholder="例如：這筆是私人購物 / 已現金處理"
+                />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1491,13 +1904,23 @@ function AddExpenseForm({
         {form.receiptUrl ? (
           <div className="relative">
             <img src={form.receiptUrl} alt="收據" className="max-h-48 w-full rounded-xl object-cover" />
-            <button
-              type="button"
-              onClick={() => setForm((prev) => ({ ...prev, receiptUrl: "" }))}
-              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-sm text-white hover:bg-black/70"
-            >
-              ✕
-            </button>
+            <div className="absolute right-2 top-2 flex gap-1">
+              <button
+                type="button"
+                onClick={() => runOCR(form.receiptUrl)}
+                disabled={ocrProcessing}
+                className="flex h-8 items-center gap-1 rounded-full bg-blue-500/80 px-3 text-xs text-white hover:bg-blue-600/80 disabled:bg-blue-300/80"
+              >
+                {ocrProcessing ? "辨識中..." : "🔍 OCR 辨識"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, receiptUrl: "" }))}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-sm text-white hover:bg-black/70"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         ) : (
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-8 transition-colors hover:border-primary-300 hover:bg-primary-50/30 active:bg-primary-50/50">
@@ -1554,6 +1977,9 @@ function SettlementView({
   onExport,
   onExportJSON,
   onExportCSV,
+  onExportPDF,
+  onExportImage,
+  customCategories,
 }: {
   currency: string;
   totalExpenses: number;
@@ -1571,6 +1997,9 @@ function SettlementView({
   onExport: () => void;
   onExportJSON: () => void;
   onExportCSV: () => void;
+  onExportPDF: () => void;
+  onExportImage: () => void;
+  customCategories: { id: string; value: string; label: string; emoji: string }[];
 }) {
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
   const specialExpenses = expenses.filter((expense) => expense.settlementMode !== "normal");
@@ -1597,6 +2026,18 @@ function SettlementView({
               className="rounded-xl border border-primary-200 px-3 py-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 sm:text-sm"
             >
               📄 結算明細
+            </button>
+            <button
+              onClick={onExportPDF}
+              className="rounded-xl border border-purple-200 px-3 py-2 text-xs font-medium text-purple-600 transition-colors hover:bg-purple-50 sm:text-sm"
+            >
+              📑 PDF
+            </button>
+            <button
+              onClick={onExportImage}
+              className="rounded-xl border border-pink-200 px-3 py-2 text-xs font-medium text-pink-600 transition-colors hover:bg-pink-50 sm:text-sm"
+            >
+              🖼️ 圖片
             </button>
             <button
               onClick={onExportJSON}
@@ -1696,7 +2137,7 @@ function SettlementView({
                 {isExpanded && (
                   <div className="mt-3 space-y-2">
                     {breakdown.items.map((item) => {
-                      const category = getCategoryInfo(item.category);
+                      const category = getCategoryInfo(item.category, customCategories);
 
                       return (
                         <div
@@ -1745,7 +2186,7 @@ function SettlementView({
                   <div>
                     <p className="text-sm font-medium text-gray-800">{expense.description}</p>
                     <p className="mt-1 text-xs text-gray-500">
-                      {expense.paidBy.name} · {expense.settlementMode === "exclude" ? "保留記帳，不納入結算" : "線下處理 / 私人支出"}
+                      {expense.paidBy.name} · {expense.settlementMode === "exclude" ? "保留記帳，不納入結算" : expense.settlementMode === "partial" ? `部分結算（${expense.settlementNote || "50"}%）` : "線下處理 / 私人支出"}
                     </p>
                     {expense.settlementNote && (
                       <p className="mt-1 text-xs text-amber-700">備註：{expense.settlementNote}</p>
@@ -1918,10 +2359,12 @@ function TripSummaryView({
   trip,
   totalExpenses,
   settlements,
+  customCategories,
 }: {
   trip: Trip;
   totalExpenses: number;
   settlements: SuggestedSettlement[];
+  customCategories: { id: string; value: string; label: string; emoji: string }[];
 }) {
   const settleableExpenses = trip.expenses.filter((expense) => expense.settlementMode === "normal");
   const specialExpenses = trip.expenses.filter((expense) => expense.settlementMode !== "normal");
@@ -1969,7 +2412,7 @@ function TripSummaryView({
             <p>支付最多：<span className="font-semibold">{topPayer?.member.name || "-"}</span>（{formatCurrency(topPayer?.amount || 0, trip.currency)}）</p>
             <p>最大單筆：<span className="font-semibold">{largestExpense?.description || "-"}</span>{largestExpense ? `（${formatCurrency(largestExpense.amount * largestExpense.exchangeRate, trip.currency)}）` : ""}</p>
             <p>最高支出日：<span className="font-semibold">{busiestDay?.[0] || "-"}</span>{busiestDay ? `（${formatCurrency(busiestDay[1], trip.currency)}）` : ""}</p>
-            <p>最大類別：<span className="font-semibold">{topCategory ? `${getCategoryInfo(topCategory[0]).emoji} ${getCategoryInfo(topCategory[0]).label}` : "-"}</span>{topCategory ? `（${formatCurrency(topCategory[1], trip.currency)}）` : ""}</p>
+            <p>最大類別：<span className="font-semibold">{topCategory ? `${getCategoryInfo(topCategory[0], customCategories).emoji} ${getCategoryInfo(topCategory[0], customCategories).label}` : "-"}</span>{topCategory ? `（${formatCurrency(topCategory[1], trip.currency)}）` : ""}</p>
           </div>
         </div>
 
@@ -1996,7 +2439,7 @@ function SummaryCard({ label, value, subLabel }: { label: string; value: string;
   );
 }
 
-function StatsView({ expenses, currency }: { expenses: Expense[]; currency: string }) {
+function StatsView({ expenses, currency, customCategories }: { expenses: Expense[]; currency: string; customCategories: { id: string; value: string; label: string; emoji: string }[] }) {
   if (expenses.length === 0) {
     return (
       <div className="py-12 text-center">
@@ -2048,7 +2491,7 @@ function StatsView({ expenses, currency }: { expenses: Expense[]; currency: stri
         </div>
         <div className="space-y-2">
           {sortedCategories.map(([category, amount], index) => {
-            const info = getCategoryInfo(category);
+            const info = getCategoryInfo(category, customCategories);
             const percentage = ((amount / total) * 100).toFixed(1);
             return (
               <div key={category} className="flex items-center justify-between">

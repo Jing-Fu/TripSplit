@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { generateInviteCode, getAvailableName } from "@/lib/utils";
+import { createTripSchema, formatZodErrors } from "@/lib/validations";
 
 export async function GET(request: Request) {
   const { user, error } = await requireUser(request);
@@ -40,8 +41,21 @@ export async function POST(request: Request) {
     members,
   } = body;
 
-  if (!name || !startDate) {
-    return NextResponse.json({ error: "名稱和開始日期為必填" }, { status: 400 });
+  const result = createTripSchema.safeParse({
+    name,
+    description,
+    destination,
+    startDate,
+    endDate,
+    currency,
+    coverEmoji,
+  });
+
+  if (!result.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(result.error) },
+      { status: 400 }
+    );
   }
 
   const requestedMembers = Array.isArray(members)
@@ -63,13 +77,13 @@ export async function POST(request: Request) {
 
   const trip = await prisma.trip.create({
     data: {
-      name,
-      description,
-      destination,
-      startDate: new Date(startDate),
-      endDate: endDate ? new Date(endDate) : null,
-      currency: currency || "TWD",
-      coverEmoji: coverEmoji || "✈️",
+      name: result.data.name,
+      description: result.data.description,
+      destination: result.data.destination,
+      startDate: new Date(result.data.startDate),
+      endDate: result.data.endDate ? new Date(result.data.endDate) : null,
+      currency: result.data.currency,
+      coverEmoji: result.data.coverEmoji,
       inviteCode: generateInviteCode(),
       ownerId: user.id,
       members: {

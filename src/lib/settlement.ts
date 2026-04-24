@@ -78,7 +78,10 @@ export function calculateSuggestedSettlements(
   payments: RecordedSettlementPayment[] = []
 ): SuggestedSettlement[] {
   const settleableExpenses = expenses.filter(
-    (expense) => (expense.settlementMode || "normal") === "normal"
+    (expense) => {
+      const mode = expense.settlementMode || "normal";
+      return mode === "normal" || mode === "partial";
+    }
   );
   const balances: Record<string, number> = {};
 
@@ -87,12 +90,20 @@ export function calculateSuggestedSettlements(
   });
 
   settleableExpenses.forEach((expense) => {
-    const amountInBase = expense.amount * expense.exchangeRate;
+    let ratio = 1;
+    if (expense.settlementMode === "partial" && expense.settlementNote) {
+      const pct = parseInt(expense.settlementNote, 10);
+      if (!isNaN(pct) && pct > 0 && pct < 100) {
+        ratio = pct / 100;
+      }
+    }
+
+    const amountInBase = expense.amount * expense.exchangeRate * ratio;
     balances[expense.paidBy.id] = (balances[expense.paidBy.id] || 0) + amountInBase;
 
     expense.splits.forEach((split) => {
       balances[split.member.id] =
-        (balances[split.member.id] || 0) - split.amount * expense.exchangeRate;
+        (balances[split.member.id] || 0) - split.amount * expense.exchangeRate * ratio;
     });
   });
 
@@ -154,17 +165,28 @@ export function calculatePairwiseBreakdown(
   expenses: SettlementExpense[]
 ): PairwiseBreakdown[] {
   const settleableExpenses = expenses.filter(
-    (expense) => (expense.settlementMode || "normal") === "normal"
+    (expense) => {
+      const mode = expense.settlementMode || "normal";
+      return mode === "normal" || mode === "partial";
+    }
   );
   const breakdownMap = new Map<string, PairwiseBreakdown>();
 
   settleableExpenses.forEach((expense) => {
+    let ratio = 1;
+    if (expense.settlementMode === "partial" && expense.settlementNote) {
+      const pct = parseInt(expense.settlementNote, 10);
+      if (!isNaN(pct) && pct > 0 && pct < 100) {
+        ratio = pct / 100;
+      }
+    }
+
     expense.splits.forEach((split) => {
       if (split.member.id === expense.paidBy.id) {
         return;
       }
 
-      const amount = Math.round(split.amount * expense.exchangeRate * 100) / 100;
+      const amount = Math.round(split.amount * expense.exchangeRate * ratio * 100) / 100;
 
       if (amount <= 0) {
         return;
