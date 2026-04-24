@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { createNotificationsForTrip } from "@/lib/notifications";
 
 export async function PATCH(
   request: Request,
@@ -46,6 +47,14 @@ export async function PATCH(
     targetType: "payment",
     targetId: updatedPayment.id,
     details: `${updatedPayment.fromMember.name} → ${updatedPayment.toMember.name} 狀態: ${status}`,
+  });
+
+  await createNotificationsForTrip({
+    tripId: params.tripId,
+    actorUserId: user.id,
+    type: "payment_updated",
+    title: "付款狀態已更新",
+    message: `${updatedPayment.fromMember.name} → ${updatedPayment.toMember.name} 已${status === "completed" ? "完成" : "取消"}`,
   });
 
   return NextResponse.json(updatedPayment);

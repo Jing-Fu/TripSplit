@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { createNotificationsForTrip } from "@/lib/notifications";
 
 export async function POST(
   request: Request,
@@ -60,6 +61,14 @@ export async function POST(
     targetType: "payment",
     targetId: payment.id,
     details: `${payment.fromMember.name} → ${payment.toMember.name} ${payment.amount} ${payment.currency}`,
+  });
+
+  await createNotificationsForTrip({
+    tripId: params.tripId,
+    actorUserId: user.id,
+    type: "payment_marked",
+    title: "新增付款紀錄",
+    message: `${payment.fromMember.name} → ${payment.toMember.name} ${payment.amount} ${payment.currency}`,
   });
 
   return NextResponse.json(payment, { status: 201 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { createNotificationsForTrip } from "@/lib/notifications";
 
 export async function POST(
   request: Request,
@@ -23,6 +24,8 @@ export async function POST(
     splitType,
     splits,
     receiptUrl,
+    settlementMode,
+    settlementNote,
   } = body;
 
   if (!amount || !category || !description || !date || !paidById) {
@@ -79,6 +82,8 @@ export async function POST(
       tripId: params.tripId,
       splitType: splitType || "equal",
       receiptUrl: receiptUrl || null,
+      settlementMode: settlementMode || "normal",
+      settlementNote: settlementNote || null,
       createdById: user.id,
       splits: {
         create: splitPayload.map((split: { memberId: string; amount: number }) => ({
@@ -101,6 +106,14 @@ export async function POST(
     targetType: "expense",
     targetId: expense.id,
     details: `${expense.description} ${expense.amount} ${expense.currency}`,
+  });
+
+  await createNotificationsForTrip({
+    tripId: params.tripId,
+    actorUserId: user.id,
+    type: "expense_created",
+    title: "新增消費",
+    message: `${user.name} 新增了「${expense.description}」`,
   });
 
   return NextResponse.json(expense, { status: 201 });

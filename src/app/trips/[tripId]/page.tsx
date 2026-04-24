@@ -37,6 +37,8 @@ type Split = {
 
 type Expense = SettlementExpense & {
   note: string | null;
+  settlementMode: string;
+  settlementNote: string | null;
   receiptUrl: string | null;
   splitType: string;
   createdBy: User | null;
@@ -82,7 +84,7 @@ type ActivityLog = {
   user: { id: string; name: string } | null;
 };
 
-type Tab = "expenses" | "add" | "settle" | "stats" | "activity";
+type Tab = "expenses" | "add" | "settle" | "summary" | "stats" | "activity";
 
 type ExpenseFilters = {
   keyword: string;
@@ -106,6 +108,8 @@ const createDefaultExpenseForm = (currency = "TWD", paidById = "") => ({
   category: "food",
   description: "",
   note: "",
+  settlementMode: "normal",
+  settlementNote: "",
   date: formatDateForInput(new Date()),
   paidById,
   splitType: "equal",
@@ -170,6 +174,9 @@ function getActivityLabel(action: string): string {
     payment_updated: "更新付款狀態",
     member_added: "新增成員",
     member_removed: "移除成員",
+    backup_imported: "匯入備份",
+    backup_exported: "匯出備份",
+    notification_generated: "通知產生",
   };
   return map[action] || action;
 }
@@ -183,6 +190,9 @@ function getActivityEmoji(action: string): string {
     payment_updated: "🔄",
     member_added: "👤",
     member_removed: "👋",
+    backup_imported: "♻️",
+    backup_exported: "💾",
+    notification_generated: "🔔",
   };
   return map[action] || "📋";
 }
@@ -222,6 +232,8 @@ function buildTripExportJSON(trip: Trip) {
       paidBy: e.paidBy.name,
       splitType: e.splitType,
       note: (e as Expense).note,
+      settlementMode: (e as Expense).settlementMode,
+      settlementNote: (e as Expense).settlementNote,
       splits: e.splits.map((s) => ({
         member: s.member.name,
         amount: s.amount,
@@ -529,6 +541,8 @@ export default function TripDetailPage() {
       category: expense.category,
       description: expense.description,
       note: expense.note || "",
+      settlementMode: expense.settlementMode || "normal",
+      settlementNote: expense.settlementNote || "",
       date: formatDateForInput(expense.date),
       paidById: expense.paidBy.id,
       splitType: expense.splitType,
@@ -589,6 +603,7 @@ export default function TripDetailPage() {
   };
 
   const markSettlementPaid = async (settlement: SuggestedSettlement) => {
+    const note = window.prompt("可選填付款備註，例如：已 LINE Pay 轉帳", "") ?? "";
     setProcessingPayment(`${settlement.fromMemberId}:${settlement.toMemberId}`);
     const res = await safeFetch(`/api/trips/${tripId}/payments`, {
       method: "POST",
@@ -597,6 +612,7 @@ export default function TripDetailPage() {
         fromMemberId: settlement.fromMemberId,
         toMemberId: settlement.toMemberId,
         amount: settlement.amount,
+        note,
       }),
     });
 
@@ -828,6 +844,7 @@ export default function TripDetailPage() {
               { key: "expenses", label: "💰 消費", count: trip.expenses.length },
               { key: "add", label: editingExpenseId ? "✏️ 編輯" : "➕ 記帳" },
               { key: "settle", label: "🤝 結算" },
+              { key: "summary", label: "🧭 總結" },
               { key: "stats", label: "📊 統計" },
               { key: "activity", label: "📜 紀錄" },
             ] as const
@@ -906,6 +923,14 @@ export default function TripDetailPage() {
             />
           )}
 
+          {tab === "summary" && (
+            <TripSummaryView
+              trip={trip}
+              totalExpenses={totalExpenses}
+              settlements={suggestedSettlements}
+            />
+          )}
+
           {tab === "stats" && (
             <StatsView expenses={trip.expenses} currency={trip.currency} />
           )}
@@ -917,6 +942,33 @@ export default function TripDetailPage() {
               onRefresh={fetchActivities}
             />
           )}
+        </div>
+
+        <div className="fixed bottom-4 left-4 right-4 z-20 mx-auto flex max-w-md items-center justify-between rounded-2xl border border-gray-100 bg-white/95 px-3 py-2 shadow-lg backdrop-blur sm:hidden">
+          <button
+            onClick={() => setTab("expenses")}
+            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "expenses" ? "bg-primary-500 text-white" : "text-gray-500"}`}
+          >
+            消費
+          </button>
+          <button
+            onClick={() => setTab("add")}
+            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "add" ? "bg-primary-500 text-white" : "text-gray-500"}`}
+          >
+            記帳
+          </button>
+          <button
+            onClick={() => setTab("settle")}
+            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "settle" ? "bg-primary-500 text-white" : "text-gray-500"}`}
+          >
+            結算
+          </button>
+          <button
+            onClick={() => setTab("summary")}
+            className={`flex-1 rounded-xl px-2 py-2 text-xs ${tab === "summary" ? "bg-primary-500 text-white" : "text-gray-500"}`}
+          >
+            總結
+          </button>
         </div>
       </div>
     </div>
@@ -1096,6 +1148,14 @@ function ExpenseList({
                         <p className="mt-0.5 text-xs text-gray-400">建立者：{expense.createdBy.name}</p>
                       )}
                       {expense.note && <p className="mt-0.5 text-xs text-gray-400">💬 {expense.note}</p>}
+                      {expense.settlementMode !== "normal" && (
+                        <p className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-600">
+                          {expense.settlementMode === "exclude"
+                            ? "結算排除"
+                            : "線下處理 / 不納入結算"}
+                          {expense.settlementNote ? `：${expense.settlementNote}` : ""}
+                        </p>
+                      )}
                       {expense.receiptUrl && (
                         <a
                           href={expense.receiptUrl}
@@ -1336,6 +1396,28 @@ function AddExpenseForm({
             placeholder="選填..."
           />
         </div>
+
+        <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-3">
+          <label className="mb-1 block text-sm font-medium text-gray-700">結算特殊處理</label>
+          <select
+            value={form.settlementMode}
+            onChange={(e) => setForm((prev) => ({ ...prev, settlementMode: e.target.value }))}
+            className="w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
+          >
+            <option value="normal">正常納入結算</option>
+            <option value="exclude">保留記帳，但不納入結算</option>
+            <option value="external">已線下處理 / 私人支出</option>
+          </select>
+          {form.settlementMode !== "normal" && (
+            <input
+              type="text"
+              value={form.settlementNote}
+              onChange={(e) => setForm((prev) => ({ ...prev, settlementNote: e.target.value }))}
+              className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
+              placeholder="例如：這筆是私人購物 / 已現金處理"
+            />
+          )}
+        </div>
       </div>
 
       <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
@@ -1491,6 +1573,7 @@ function SettlementView({
   onExportCSV: () => void;
 }) {
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
+  const specialExpenses = expenses.filter((expense) => expense.settlementMode !== "normal");
 
   return (
     <div className="space-y-4">
@@ -1649,6 +1732,35 @@ function SettlementView({
         </div>
       </div>
 
+      {specialExpenses.length > 0 && (
+        <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm sm:p-5">
+          <h3 className="mb-1 text-sm font-medium text-gray-500">⚠️ 不納入自動結算的費用</h3>
+          <p className="mb-4 text-xs text-gray-400">
+            這些費用仍會保留在記帳與統計中，但不會參與自動結算建議。
+          </p>
+          <div className="space-y-2">
+            {specialExpenses.map((expense) => (
+              <div key={expense.id} className="rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{expense.description}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {expense.paidBy.name} · {expense.settlementMode === "exclude" ? "保留記帳，不納入結算" : "線下處理 / 私人支出"}
+                    </p>
+                    {expense.settlementNote && (
+                      <p className="mt-1 text-xs text-amber-700">備註：{expense.settlementNote}</p>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold text-amber-700">
+                    {formatCurrency(expense.amount * expense.exchangeRate, currency)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
         <h3 className="mb-1 text-sm font-medium text-gray-500">👤 依人查看結算明細</h3>
         <p className="mb-4 text-xs text-gray-400">每個人都可以從自己的角度看待付、待收與對應品項。</p>
@@ -1798,6 +1910,88 @@ function SettlementView({
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+function TripSummaryView({
+  trip,
+  totalExpenses,
+  settlements,
+}: {
+  trip: Trip;
+  totalExpenses: number;
+  settlements: SuggestedSettlement[];
+}) {
+  const settleableExpenses = trip.expenses.filter((expense) => expense.settlementMode === "normal");
+  const specialExpenses = trip.expenses.filter((expense) => expense.settlementMode !== "normal");
+
+  const payerTotals = trip.members.map((member) => ({
+    member,
+    amount: trip.expenses
+      .filter((expense) => expense.paidBy.id === member.id)
+      .reduce((sum, expense) => sum + expense.amount * expense.exchangeRate, 0),
+  }));
+
+  const topPayer = [...payerTotals].sort((a, b) => b.amount - a.amount)[0];
+  const largestExpense = [...trip.expenses].sort(
+    (a, b) => b.amount * b.exchangeRate - a.amount * a.exchangeRate
+  )[0];
+
+  const topCategory = Object.entries(
+    trip.expenses.reduce<Record<string, number>>((acc, expense) => {
+      acc[expense.category] = (acc[expense.category] || 0) + expense.amount * expense.exchangeRate;
+      return acc;
+    }, {})
+  ).sort(([, a], [, b]) => b - a)[0];
+
+  const busiestDay = Object.entries(
+    trip.expenses.reduce<Record<string, number>>((acc, expense) => {
+      const key = formatDateForInput(expense.date);
+      acc[key] = (acc[key] || 0) + expense.amount * expense.exchangeRate;
+      return acc;
+    }, {})
+  ).sort(([, a], [, b]) => b - a)[0];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard label="總支出" value={formatCurrency(totalExpenses, trip.currency)} subLabel={`${trip.expenses.length} 筆費用`} />
+        <SummaryCard label="待結算筆數" value={`${settlements.length} 筆`} subLabel="尚未完成的建議轉帳" />
+        <SummaryCard label="納入結算" value={formatCurrency(settleableExpenses.reduce((sum, e) => sum + e.amount * e.exchangeRate, 0), trip.currency)} subLabel={`${settleableExpenses.length} 筆可結算費用`} />
+        <SummaryCard label="特殊處理費用" value={`${specialExpenses.length} 筆`} subLabel="已排除或線下處理" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <h3 className="mb-4 text-sm font-medium text-gray-500">🏆 旅程亮點</h3>
+          <div className="space-y-3 text-sm text-gray-700">
+            <p>支付最多：<span className="font-semibold">{topPayer?.member.name || "-"}</span>（{formatCurrency(topPayer?.amount || 0, trip.currency)}）</p>
+            <p>最大單筆：<span className="font-semibold">{largestExpense?.description || "-"}</span>{largestExpense ? `（${formatCurrency(largestExpense.amount * largestExpense.exchangeRate, trip.currency)}）` : ""}</p>
+            <p>最高支出日：<span className="font-semibold">{busiestDay?.[0] || "-"}</span>{busiestDay ? `（${formatCurrency(busiestDay[1], trip.currency)}）` : ""}</p>
+            <p>最大類別：<span className="font-semibold">{topCategory ? `${getCategoryInfo(topCategory[0]).emoji} ${getCategoryInfo(topCategory[0]).label}` : "-"}</span>{topCategory ? `（${formatCurrency(topCategory[1], trip.currency)}）` : ""}</p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <h3 className="mb-4 text-sm font-medium text-gray-500">📌 後續提醒</h3>
+          <div className="space-y-3 text-sm text-gray-700">
+            <p>目前還有 <span className="font-semibold">{settlements.length}</span> 筆待處理結算。</p>
+            <p>若要備份旅程，可到結算頁匯出 JSON；如需還原，可回首頁匯入備份。</p>
+            <p>若有 <span className="font-semibold">{specialExpenses.length}</span> 筆特殊處理費用，請在實際付款前再次確認是否仍需排除。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, subLabel }: { label: string; value: string; subLabel: string }) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-xs text-gray-400">{label}</p>
+      <p className="mt-2 text-xl font-bold text-gray-800">{value}</p>
+      <p className="mt-1 text-xs text-gray-400">{subLabel}</p>
     </div>
   );
 }

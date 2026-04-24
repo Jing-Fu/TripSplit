@@ -7,13 +7,16 @@ export type ActivityAction =
   | "payment_marked"
   | "payment_updated"
   | "member_added"
-  | "member_removed";
+  | "member_removed"
+  | "backup_imported"
+  | "backup_exported"
+  | "notification_generated";
 
 export async function logActivity(params: {
   tripId: string;
   userId: string;
   action: ActivityAction;
-  targetType: "expense" | "payment" | "member";
+  targetType: "expense" | "payment" | "member" | "trip" | "notification";
   targetId?: string;
   details?: string;
 }) {

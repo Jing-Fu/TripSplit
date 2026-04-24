@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { getAvailableName } from "@/lib/utils";
 import { logActivity } from "@/lib/activity";
+import { createNotificationsForTrip } from "@/lib/notifications";
 
 export async function POST(
   request: Request,
@@ -49,6 +50,14 @@ export async function POST(
     details: name,
   });
 
+  await createNotificationsForTrip({
+    tripId: params.tripId,
+    actorUserId: user.id,
+    type: "member_added",
+    title: "旅伴已新增",
+    message: `${user.name} 新增了旅伴「${name}」`,
+  });
+
   return NextResponse.json(member, { status: 201 });
 }
 
@@ -92,6 +101,14 @@ export async function DELETE(request: Request) {
     targetType: "member",
     targetId: memberId,
     details: member.name,
+  });
+
+  await createNotificationsForTrip({
+    tripId: member.trip.id,
+    actorUserId: user.id,
+    type: "member_removed",
+    title: "旅伴已移除",
+    message: `${user.name} 移除了旅伴「${member.name}」`,
   });
 
   return NextResponse.json({ success: true });

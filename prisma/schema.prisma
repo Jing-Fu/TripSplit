@@ -26,6 +26,7 @@ model Trip {
   expenses Expense[]
   payments SettlementPayment[]
   activityLogs ActivityLog[]
+  notifications Notification[]
 }
 
 model User {
@@ -41,6 +42,7 @@ model User {
   sessions        Session[]
   settledPayments SettlementPayment[] @relation("SettlementMarkedBy")
   activityLogs    ActivityLog[]       @relation("ActivityLogUser")
+  notifications   Notification[]
 }
 
 model Session {
@@ -79,6 +81,8 @@ model Expense {
   category    String
   description String
   note        String?
+  settlementMode String   @default("normal")
+  settlementNote String?
   date        DateTime
   receiptUrl  String?
   splitType   String   @default("equal")
@@ -142,4 +146,20 @@ model ActivityLog {
   user User? @relation("ActivityLogUser", fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([tripId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  tripId    String?
+  type      String
+  title     String
+  message   String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip Trip? @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
 }

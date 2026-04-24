@@ -17,6 +17,9 @@ export type SettlementExpense = {
   exchangeRate: number;
   category: string;
   description: string;
+  note?: string | null;
+  settlementMode?: string;
+  settlementNote?: string | null;
   date: string;
   paidBy: SettlementMember;
   splits: SettlementSplit[];
@@ -74,13 +77,16 @@ export function calculateSuggestedSettlements(
   expenses: SettlementExpense[],
   payments: RecordedSettlementPayment[] = []
 ): SuggestedSettlement[] {
+  const settleableExpenses = expenses.filter(
+    (expense) => (expense.settlementMode || "normal") === "normal"
+  );
   const balances: Record<string, number> = {};
 
   members.forEach((member) => {
     balances[member.id] = 0;
   });
 
-  expenses.forEach((expense) => {
+  settleableExpenses.forEach((expense) => {
     const amountInBase = expense.amount * expense.exchangeRate;
     balances[expense.paidBy.id] = (balances[expense.paidBy.id] || 0) + amountInBase;
 
@@ -147,9 +153,12 @@ export function calculateSuggestedSettlements(
 export function calculatePairwiseBreakdown(
   expenses: SettlementExpense[]
 ): PairwiseBreakdown[] {
+  const settleableExpenses = expenses.filter(
+    (expense) => (expense.settlementMode || "normal") === "normal"
+  );
   const breakdownMap = new Map<string, PairwiseBreakdown>();
 
-  expenses.forEach((expense) => {
+  settleableExpenses.forEach((expense) => {
     expense.splits.forEach((split) => {
       if (split.member.id === expense.paidBy.id) {
         return;
@@ -269,7 +278,7 @@ export function exportSettlementSummaryAsText(
             (payment) =>
               `- ${payment.fromMember.name} → ${payment.toMember.name}：${payment.amount.toFixed(
                 2
-              )}`
+              )}${payment.note ? `（備註：${payment.note}）` : ""}`
           )
           .join("\n")
       : "- 尚無已標記付款";

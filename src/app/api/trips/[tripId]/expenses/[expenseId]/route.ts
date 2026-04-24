@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { createNotificationsForTrip } from "@/lib/notifications";
 
 async function canManageExpense(userId: string, expenseId: string) {
   const expense = await prisma.expense.findUnique({
@@ -54,6 +55,8 @@ export async function PATCH(
     splitType,
     splits,
     receiptUrl,
+    settlementMode,
+    settlementNote,
   } = body;
 
   const trip = await prisma.trip.findUnique({
@@ -104,6 +107,8 @@ export async function PATCH(
         ...(paidById && { paidById }),
         ...(splitType && { splitType }),
         ...(receiptUrl !== undefined && { receiptUrl: receiptUrl || null }),
+        ...(settlementMode && { settlementMode }),
+        ...(settlementNote !== undefined && { settlementNote: settlementNote || null }),
         ...(splits && {
           splits: {
             create: splitPayload.map(
@@ -130,6 +135,14 @@ export async function PATCH(
     targetType: "expense",
     targetId: expense.id,
     details: `${expense.description} ${expense.amount} ${expense.currency}`,
+  });
+
+  await createNotificationsForTrip({
+    tripId: params.tripId,
+    actorUserId: user.id,
+    type: "expense_updated",
+    title: "消費已更新",
+    message: `${user.name} 更新了「${expense.description}」`,
   });
 
   return NextResponse.json(expense);
@@ -162,6 +175,14 @@ export async function DELETE(
     targetType: "expense",
     targetId: params.expenseId,
     details: `${expenseToDelete.description}`,
+  });
+
+  await createNotificationsForTrip({
+    tripId: params.tripId,
+    actorUserId: user.id,
+    type: "expense_deleted",
+    title: "消費已刪除",
+    message: `${user.name} 刪除了「${expenseToDelete.description}」`,
   });
 
   return NextResponse.json({ success: true });
