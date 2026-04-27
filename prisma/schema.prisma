@@ -34,7 +34,9 @@ model Trip {
 model User {
   id              String              @id @default(cuid())
   email           String              @unique
+  googleSub       String?             @unique
   name            String
+  avatarUrl       String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 

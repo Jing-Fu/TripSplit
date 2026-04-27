@@ -66,15 +66,15 @@ export const en: Messages = {
   },
   login: {
     backHome: "← Back to home",
-    title: "Log in to TripSplit",
+    title: "Continue to TripSplit with Google",
     description:
-      "Use a simple account identity first. Creating trips, joining trips, and permission control will be tied to this identity.",
-    email: "Email *",
-    displayName: "Display name (required on first login)",
-    displayNamePlaceholder: "Example: Jing",
-    submit: "Log in / Create account",
-    submitting: "Logging in...",
-    failed: "Login failed",
+      "Your Google account becomes the only way to log in to TripSplit. After sign-in, trips, joining flows, and permissions still use your existing TripSplit identity.",
+    email: "Google email",
+    displayName: "Display name",
+    displayNamePlaceholder: "TripSplit keeps your existing display name when linking",
+    submit: "Continue with Google",
+    submitting: "Verifying with Google...",
+    failed: "Google sign-in failed",
   },
   newTrip: {
     checkingAuth: "Checking login status...",

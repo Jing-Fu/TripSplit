@@ -53,9 +53,8 @@ export const createPaymentSchema = z.object({
   note: z.string().max(500).optional().nullable(),
 });
 
-export const loginSchema = z.object({
-  email: z.string().email("請輸入有效的 Email"),
-  name: z.string().min(1, "請輸入顯示名稱").max(50, "名稱不可超過 50 字"),
+export const googleLoginSchema = z.object({
+  credential: z.string().min(1, "Google 登入憑證遺失，請重新嘗試"),
 });
 
 export function formatZodErrors(error: z.ZodError): string {

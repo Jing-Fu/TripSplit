@@ -197,7 +197,32 @@ cp .env.example .env
 
 ```env
 DATABASE_URL="file:./prisma/dev.db"
+APP_URL="http://localhost:3000"
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
+NEXT_PUBLIC_GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
 ```
+
+- `GOOGLE_CLIENT_ID`：後端驗證 Google ID token 使用
+- `NEXT_PUBLIC_GOOGLE_CLIENT_ID`：前端載入 Google Sign-In 按鈕使用
+- `APP_URL` / `NEXT_PUBLIC_APP_URL`：登入 redirect mode 與前端頁面顯示使用，開發時預設為 `http://localhost:3000`
+
+若要用 **手機或同網段裝置** 測試，請改用區網網址，例如：
+
+```env
+APP_URL="http://192.168.1.10:3000"
+NEXT_PUBLIC_APP_URL="http://192.168.1.10:3000"
+```
+
+並在 Google Cloud Console 的這組 OAuth Web client 補上：
+
+- **Authorized JavaScript origins**
+  - `http://localhost`
+  - `http://localhost:3000`
+  - `http://192.168.1.10:3000`（請換成你的實際 LAN 位址）
+- **Authorized redirect URIs**
+  - `http://localhost:3000/api/auth/login`
+  - `http://192.168.1.10:3000/api/auth/login`（手機/LAN 測試需要）
 
 若要啟用 **Notion 匯出**，請另外加入：
 
@@ -228,6 +253,15 @@ npx prisma db push
 
 ```bash
 npm run dev
+```
+
+> [!TIP]
+> 不要使用 `npx run dev`。那會嘗試執行名為 `dev` 的 Node 模組，因此出現 `Cannot find module '/.../dev'`。
+
+若要讓手機透過同網段連入，請使用：
+
+```bash
+npm run dev:lan
 ```
 
 ### 5. 建置正式版本
