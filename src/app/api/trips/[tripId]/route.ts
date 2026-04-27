@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
 
 async function getTripForUser(tripId: string, userId: string) {
@@ -48,7 +49,7 @@ export async function GET(
 
   const currentMember = trip.members.find((member) => member.userId === user.id) ?? null;
 
-  return NextResponse.json({
+  return NextResponse.json(serializePrisma({
     ...trip,
     permissions: {
       isOwner: trip.ownerId === user.id,
@@ -58,7 +59,7 @@ export async function GET(
     },
     currentUser: user,
     currentMemberId: currentMember?.id ?? null,
-  });
+  }));
 }
 
 export async function PATCH(
@@ -103,7 +104,7 @@ export async function PATCH(
     include: { members: true },
   });
 
-  return NextResponse.json(updatedTrip);
+  return NextResponse.json(serializePrisma(updatedTrip));
 }
 
 export async function DELETE(

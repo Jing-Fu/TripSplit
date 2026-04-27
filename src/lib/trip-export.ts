@@ -49,9 +49,9 @@ export function buildTripExportJSON(trip: TripForExport) {
     members: trip.members.map((member) => ({ name: member.name })),
     expenses: trip.expenses.map((expense) => ({
       description: expense.description,
-      amount: expense.amount,
+      amount: Number(expense.amount),
       currency: expense.currency,
-      exchangeRate: expense.exchangeRate,
+      exchangeRate: Number(expense.exchangeRate),
       category: expense.category,
       date: expense.date.toISOString(),
       paidBy: expense.paidBy.name,
@@ -61,13 +61,13 @@ export function buildTripExportJSON(trip: TripForExport) {
       settlementNote: expense.settlementNote,
       splits: expense.splits.map((split) => ({
         member: split.member.name,
-        amount: split.amount,
+        amount: Number(split.amount),
       })),
     })),
     payments: trip.payments.map((payment) => ({
       from: payment.fromMember.name,
       to: payment.toMember.name,
-      amount: payment.amount,
+      amount: Number(payment.amount),
       currency: payment.currency,
       status: payment.status,
       settledAt: payment.settledAt.toISOString(),

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { serializePrisma } from "@/lib/prisma-json";
 import { requireUser } from "@/lib/auth";
 import { generateInviteCode, getAvailableName } from "@/lib/utils";
 import { createTripSchema, formatZodErrors } from "@/lib/validations";
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
     orderBy: { createdAt: "desc" },
   });
 
-  return NextResponse.json(trips);
+  return NextResponse.json(serializePrisma(trips));
 }
 
 export async function POST(request: Request) {
@@ -93,5 +94,5 @@ export async function POST(request: Request) {
     include: { members: true },
   });
 
-  return NextResponse.json(trip, { status: 201 });
+  return NextResponse.json(serializePrisma(trip), { status: 201 });
 }

@@ -3,9 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
+
 
 model Trip {
   id          String   @id @default(cuid())
@@ -29,6 +31,8 @@ model Trip {
   notifications Notification[]
   customCategories CustomCategory[]
   backupRecords    BackupRecord[]
+
+  @@index([ownerId])
 }
 
 model User {
@@ -58,6 +62,9 @@ model Session {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Member {
@@ -76,13 +83,15 @@ model Member {
 
   @@unique([tripId, name])
   @@unique([tripId, userId])
+  @@index([tripId])
+  @@index([userId])
 }
 
 model Expense {
   id          String   @id @default(cuid())
-  amount      Float
+  amount      Decimal  @db.Decimal(12, 2)
   currency    String   @default("TWD")
-  exchangeRate Float   @default(1.0)
+  exchangeRate Decimal @default(1.0) @db.Decimal(18, 8)
   category    String
   description String
   note        String?
@@ -101,11 +110,15 @@ model Expense {
   trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
   createdBy User?   @relation("ExpenseCreator", fields: [createdById], references: [id], onDelete: SetNull)
   splits    Split[]
+
+  @@index([tripId, date])
+  @@index([paidById])
+  @@index([createdById])
 }
 
 model Split {
   id        String @id @default(cuid())
-  amount    Float
+  amount    Decimal @db.Decimal(12, 2)
   memberId  String
   expenseId String
 
@@ -113,6 +126,8 @@ model Split {
   expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
 
   @@unique([memberId, expenseId])
+  @@index([memberId])
+  @@index([expenseId])
 }
 
 model SettlementPayment {
@@ -120,7 +135,7 @@ model SettlementPayment {
   tripId      String
   fromMemberId String
   toMemberId  String
-  amount      Float
+  amount      Decimal  @db.Decimal(12, 2)
   currency    String
   note        String?
   status      String   @default("completed")
@@ -135,6 +150,10 @@ model SettlementPayment {
   settledBy User   @relation("SettlementMarkedBy", fields: [settledById], references: [id], onDelete: Cascade)
 
   @@index([tripId, status])
+  @@index([tripId, settledAt])
+  @@index([fromMemberId])
+  @@index([toMemberId])
+  @@index([settledById])
 }
 
 model ActivityLog {

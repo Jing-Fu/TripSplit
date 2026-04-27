@@ -1,6 +1,6 @@
 # TripSplit
 
-一個以 **Next.js + Prisma + SQLite** 打造的旅遊分帳應用，專門用來管理多人旅程中的費用、分帳、結算、備份與通知流程。
+一個以 **Next.js + Prisma + PostgreSQL** 打造的旅遊分帳應用，專門用來管理多人旅程中的費用、分帳、結算、備份與通知流程。
 
 > [!NOTE]
 > 目前程式碼中的預設語系為繁體中文，並已具備英文語系架構與文案。
@@ -161,7 +161,7 @@
 
 - Next.js Route Handlers
 - Prisma ORM
-- SQLite
+- PostgreSQL
 - Zod 驗證
 
 ### 其他能力
@@ -196,7 +196,7 @@ cp .env.example .env
 目前預設：
 
 ```env
-DATABASE_URL="file:./prisma/dev.db"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/tripsplit?schema=public"
 APP_URL="http://localhost:3000"
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
@@ -236,18 +236,22 @@ NOTION_PARENT_PAGE_ID="your_notion_page_id"
 - 請把這兩個值保留在 server 端環境變數，不要使用 `NEXT_PUBLIC_` 前綴
 
 > [!IMPORTANT]
-> Prisma schema 使用 SQLite，預設資料庫檔案會落在 `prisma/dev.db`。
+> 正式部署請使用 PostgreSQL，並將 `DATABASE_URL` 指向可持久化的託管資料庫。
 
 ### 3. 初始化 Prisma 資料庫
 
-第一次啟動前，請先產生 Prisma Client 並建立 SQLite 資料庫 schema：
+第一次啟動前，請先產生 Prisma Client 並建立 Prisma migration：
 
 ```bash
-npx prisma generate
-npx prisma db push
+npm run db:generate
+npm run db:migrate:dev
 ```
 
-成功後會建立 `prisma/dev.db`，登入功能才會正常使用。
+部署到正式環境時，請改用：
+
+```bash
+npm run db:migrate:deploy
+```
 
 ### 4. 啟動開發環境
 
@@ -344,9 +348,9 @@ npm run lint
 > README 內容以目前程式碼實作為準，而不是規劃文件或待辦清單。
 
 - 認證目前為簡易 Email + 顯示名稱登入，尚未整合 OAuth 或密碼機制
-- 資料庫目前使用 SQLite，適合本機開發與小型部署
+- 資料庫設定已切換為 PostgreSQL；部署前需要自行準備可持久化的資料庫服務
 - 專案目前沒有定義 Docker、CI/CD 或雲端部署設定檔
-- 專案沒有提供 Prisma migration scripts；目前可見的是既有 schema 與 SQLite 資料庫檔案
+- Prisma migration 已納入腳本，但目前沒有自動化 release phase / migration pipeline
 - 收據檔案目前儲存在本機檔案系統，而非雲端物件儲存
 - 程式中已建立 i18n 架構，但目前未見完整的語系切換 UI
 - 規劃文件中提到的部分未來功能，若未出現在目前程式碼中，並不代表已完成
@@ -356,9 +360,14 @@ npm run lint
 ```json
 {
   "dev": "next dev",
+  "dev:lan": "next dev -H 0.0.0.0",
   "build": "next build",
   "start": "next start",
-  "lint": "eslint"
+  "lint": "eslint",
+  "db:generate": "prisma generate",
+  "db:migrate:dev": "prisma migrate dev",
+  "db:migrate:deploy": "prisma migrate deploy",
+  "db:migrate:status": "prisma migrate status"
 }
 ```
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createNotificationsForTrip } from "@/lib/notifications";
@@ -77,5 +78,5 @@ export async function POST(
     message: `${payment.fromMember.name} → ${payment.toMember.name} ${payment.amount} ${payment.currency}`,
   });
 
-  return NextResponse.json(payment, { status: 201 });
+  return NextResponse.json(serializePrisma(payment), { status: 201 });
 }

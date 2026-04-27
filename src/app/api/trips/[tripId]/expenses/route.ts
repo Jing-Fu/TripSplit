@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createNotificationsForTrip } from "@/lib/notifications";
@@ -122,5 +123,5 @@ export async function POST(
     message: `${user.name} 新增了「${expense.description}」`,
   });
 
-  return NextResponse.json(expense, { status: 201 });
+  return NextResponse.json(serializePrisma(expense), { status: 201 });
 }

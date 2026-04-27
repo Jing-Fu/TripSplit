@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createNotificationsForTrip } from "@/lib/notifications";
@@ -57,5 +58,5 @@ export async function PATCH(
     message: `${updatedPayment.fromMember.name} → ${updatedPayment.toMember.name} 已${status === "completed" ? "完成" : "取消"}`,
   });
 
-  return NextResponse.json(updatedPayment);
+  return NextResponse.json(serializePrisma(updatedPayment));
 }
