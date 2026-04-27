@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { createUserSession, setSessionCookie } from "@/lib/auth";
 import { type VerifiedGoogleProfile, verifyGoogleCredential } from "@/lib/google-auth";
 import { formatZodErrors, googleLoginSchema } from "@/lib/validations";
 
+export const runtime = "nodejs";
+
 async function signInWithGoogleCredential(credential: string) {
+  const [{ prisma }, { createUserSession }, { verifyGoogleCredential }] = await Promise.all([
+    import("@/lib/prisma"),
+    import("@/lib/auth"),
+    import("@/lib/google-auth"),
+  ]);
+
   if (
     !process.env.GOOGLE_CLIENT_ID &&
     !process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
@@ -91,6 +97,7 @@ async function signInWithGoogleCredential(credential: string) {
 }
 
 export async function POST(request: Request) {
+  const { setSessionCookie } = await import("@/lib/auth");
   const contentType = request.headers.get("content-type") ?? "";
   let credential: string | null = null;
   let redirectTo = "/";
