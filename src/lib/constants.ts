@@ -40,6 +40,24 @@ export const SPLIT_TYPES = [
 
 export type SplitType = (typeof SPLIT_TYPES)[number]["value"];
 
+export const NOTIFICATION_TYPE_TO_PREFERENCE = {
+  expense_created: "expenseCreated",
+  expense_updated: "expenseUpdated",
+  expense_deleted: "expenseDeleted",
+  member_added: "memberAdded",
+  member_removed: "memberRemoved",
+  payment_marked: "paymentMarked",
+  payment_updated: "paymentUpdated",
+  backup_imported: "backupImported",
+} as const;
+
+export type NotificationType = keyof typeof NOTIFICATION_TYPE_TO_PREFERENCE;
+export type NotificationPreferenceField =
+  (typeof NOTIFICATION_TYPE_TO_PREFERENCE)[NotificationType];
+export const NOTIFICATION_PREFERENCE_FIELDS = Object.values(
+  NOTIFICATION_TYPE_TO_PREFERENCE
+) as NotificationPreferenceField[];
+
 export const TRIP_EMOJIS = [
   "✈️", "🏖️", "🗻", "🏕️", "🚢", "🎿", "🏝️", "🌍",
   "🇯🇵", "🇰🇷", "🇹🇭", "🇻🇳", "🇺🇸", "🇬🇧", "🇫🇷", "🇩🇪",

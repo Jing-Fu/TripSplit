@@ -32,7 +32,13 @@ export async function logActivity(params: {
         details: params.details || null,
       },
     });
-  } catch {
-    // Non-critical — don't fail the main operation
+  } catch (error) {
+    console.error("Failed to log activity", {
+      tripId: params.tripId,
+      action: params.action,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      error,
+    });
   }
 }

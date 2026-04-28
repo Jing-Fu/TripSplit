@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
+import { formatZodErrors, updateTripSchema } from "@/lib/validations";
 
 async function getTripForUser(tripId: string, userId: string) {
   return prisma.trip.findFirst({
@@ -80,6 +81,15 @@ export async function PATCH(
   }
 
   const body = await request.json();
+  const parsed = updateTripSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(parsed.error) },
+      { status: 400 }
+    );
+  }
+
   const {
     name,
     description,
@@ -88,7 +98,7 @@ export async function PATCH(
     endDate,
     currency,
     coverEmoji,
-  } = body;
+  } = parsed.data;
 
   const updatedTrip = await prisma.trip.update({
     where: { id: params.tripId },

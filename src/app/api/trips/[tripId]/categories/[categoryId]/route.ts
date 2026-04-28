@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
+import { formatZodErrors, updateCategorySchema } from "@/lib/validations";
 
 async function getCategoryForTrip(tripId: string, categoryId: string) {
   return prisma.customCategory.findFirst({
@@ -44,16 +45,6 @@ export async function PATCH(
   }
 
   const body = await request.json();
-  const label = body.label?.trim();
-  const emoji = body.emoji?.trim();
-
-  if (body.label !== undefined && !label) {
-    return NextResponse.json({ error: "label 不能為空" }, { status: 400 });
-  }
-
-  if (body.emoji !== undefined && !emoji) {
-    return NextResponse.json({ error: "emoji 不能為空" }, { status: 400 });
-  }
 
   if (body.label === undefined && body.emoji === undefined) {
     return NextResponse.json({
@@ -64,12 +55,32 @@ export async function PATCH(
     });
   }
 
+  const parsed = updateCategorySchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(parsed.error) },
+      { status: 400 }
+    );
+  }
+
+  const label = parsed.data.label?.trim();
+  const emoji = parsed.data.emoji?.trim();
+
+  if (parsed.data.label !== undefined && !label) {
+    return NextResponse.json({ error: "label 不能為空" }, { status: 400 });
+  }
+
+  if (parsed.data.emoji !== undefined && !emoji) {
+    return NextResponse.json({ error: "emoji 不能為空" }, { status: 400 });
+  }
+
   const updatedCategory = await prisma.customCategory.update({
     where: { id: params.categoryId },
     data: {
-      ...(body.label !== undefined && { label }),
-      ...(body.emoji !== undefined && { emoji }),
-    },
+        ...(parsed.data.label !== undefined && { label }),
+        ...(parsed.data.emoji !== undefined && { emoji }),
+      },
     select: {
       id: true,
       value: true,

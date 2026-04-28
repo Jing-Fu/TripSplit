@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 import { v4 as uuidv4 } from "uuid";
+import { getStorage } from "@/lib/storage";
 
 export async function POST(request: Request) {
   try {
@@ -25,12 +24,10 @@ export async function POST(request: Request) {
 
     const ext = file.name.split(".").pop() || "jpg";
     const filename = `${uuidv4()}.${ext}`;
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
 
-    await mkdir(uploadDir, { recursive: true });
-    await writeFile(path.join(uploadDir, filename), buffer);
+    const url = await getStorage().writeFile(`uploads/${filename}`, buffer);
 
-    return NextResponse.json({ url: `/uploads/${filename}` });
+    return NextResponse.json({ url });
   } catch {
     return NextResponse.json({ error: "收據上傳失敗，請稍後再試" }, { status: 500 });
   }

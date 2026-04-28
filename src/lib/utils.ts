@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { EXPENSE_CATEGORIES } from "@/lib/constants";
 
 export function generateInviteCode(): string {
   return nanoid(8);
@@ -29,7 +30,6 @@ export function formatDateForInput(date: Date | string): string {
 }
 
 export function getCategoryInfo(value: string) {
-  const { EXPENSE_CATEGORIES } = require("./constants");
   return (
     EXPENSE_CATEGORIES.find(
       (c: { value: string }) => c.value === value

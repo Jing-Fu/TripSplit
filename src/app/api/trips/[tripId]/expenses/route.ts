@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
-import { logActivity } from "@/lib/activity";
-import { createNotificationsForTrip } from "@/lib/notifications";
+import { recordSideEffects } from "@/lib/side-effects";
 import { createExpenseSchema, formatZodErrors } from "@/lib/validations";
 
 export async function POST(
@@ -106,21 +105,21 @@ export async function POST(
     },
   });
 
-  await logActivity({
+  await recordSideEffects({
     tripId: params.tripId,
     userId: user.id,
-    action: "expense_created",
-    targetType: "expense",
-    targetId: expense.id,
-    details: `${expense.description} ${expense.amount} ${expense.currency}`,
-  });
-
-  await createNotificationsForTrip({
-    tripId: params.tripId,
-    actorUserId: user.id,
-    type: "expense_created",
-    title: "新增消費",
-    message: `${user.name} 新增了「${expense.description}」`,
+    activity: {
+      action: "expense_created",
+      targetType: "expense",
+      targetId: expense.id,
+      details: `${expense.description} ${expense.amount} ${expense.currency}`,
+    },
+    notification: {
+      actorUserId: user.id,
+      type: "expense_created",
+      title: "新增消費",
+      message: `${user.name} 新增了「${expense.description}」`,
+    },
   });
 
   return NextResponse.json(serializePrisma(expense), { status: 201 });

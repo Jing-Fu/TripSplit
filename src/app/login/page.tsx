@@ -4,6 +4,7 @@ import Script from "next/script";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocale } from "@/lib/i18n/context";
 
 type GoogleCredentialResponse = {
   credential?: string;
@@ -43,6 +44,7 @@ declare global {
 }
 
 export default function LoginPage() {
+  const { t } = useLocale();
   const router = useRouter();
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef(false);
@@ -77,7 +79,7 @@ export default function LoginPage() {
       const data = (await res.json().catch(() => null)) as { error?: string } | null;
 
       if (!res.ok) {
-        setError(data?.error || "Google 登入失敗");
+        setError(data?.error || t("login.failed"));
         setLoading(false);
         return;
       }
@@ -85,7 +87,7 @@ export default function LoginPage() {
       router.push("/");
       router.refresh();
     },
-    [router]
+    [router, t]
   );
 
   const initializeGoogleButton = useCallback(() => {
@@ -152,13 +154,13 @@ export default function LoginPage() {
       <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50 px-4 py-10">
         <div className="mx-auto max-w-md">
           <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
-            ← 返回首頁
+            {t("login.backHome")}
           </Link>
 
           <div className="mt-6 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-            <h1 className="text-2xl font-bold text-gray-800">使用 Google 登入 TripSplit</h1>
+            <h1 className="text-2xl font-bold text-gray-800">{t("login.title")}</h1>
             <p className="mt-2 text-sm text-gray-400">
-              你的 Google 帳號會成為 TripSplit 的唯一登入方式。登入成功後，旅程、加入旅程與權限控制仍會沿用目前的帳號身份。
+              {t("login.description")}
             </p>
 
             <div className="mt-6 rounded-2xl bg-primary-50 px-4 py-3 text-sm text-primary-700">
@@ -183,7 +185,7 @@ export default function LoginPage() {
             )}
 
             {loading && (
-              <p className="mt-4 text-center text-sm text-gray-500">Google 驗證中...</p>
+              <p className="mt-4 text-center text-sm text-gray-500">{t("login.submitting")}</p>
             )}
 
             {error && <p className="mt-4 text-sm text-red-500">{error}</p>}

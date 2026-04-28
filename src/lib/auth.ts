@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 export const AUTH_COOKIE_NAME = "tripsplit_session";
 const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
 
-function getCookieValue(cookieHeader: string | null, cookieName: string) {
+export function getCookieValue(cookieHeader: string | null, cookieName: string) {
   if (!cookieHeader) return null;
 
   return (

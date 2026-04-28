@@ -1,15 +1,8 @@
 import { prisma } from "@/lib/prisma";
-
-const TYPE_TO_PREFERENCE_KEY: Record<string, string> = {
-  expense_created: "expenseCreated",
-  expense_updated: "expenseUpdated",
-  expense_deleted: "expenseDeleted",
-  member_added: "memberAdded",
-  member_removed: "memberRemoved",
-  payment_marked: "paymentMarked",
-  payment_updated: "paymentUpdated",
-  backup_imported: "backupImported",
-};
+import {
+  NOTIFICATION_TYPE_TO_PREFERENCE,
+  type NotificationPreferenceField,
+} from "@/lib/constants";
 
 export async function createNotificationsForTrip(params: {
   tripId: string;
@@ -18,62 +11,74 @@ export async function createNotificationsForTrip(params: {
   title: string;
   message: string;
 }) {
-  const trip = await prisma.trip.findUnique({
-    where: { id: params.tripId },
-    include: {
-      members: true,
-      owner: true,
-    },
-  });
-
-  if (!trip) return;
-
-  const recipientIds = new Set<string>();
-
-  if (trip.ownerId && trip.ownerId !== params.actorUserId) {
-    recipientIds.add(trip.ownerId);
-  }
-
-  trip.members.forEach((member) => {
-    if (member.userId && member.userId !== params.actorUserId) {
-      recipientIds.add(member.userId);
-    }
-  });
-
-  if (recipientIds.size === 0) {
-    return;
-  }
-
-  const prefKey = TYPE_TO_PREFERENCE_KEY[params.type];
-  let filteredRecipients = Array.from(recipientIds);
-
-  if (prefKey) {
-    const preferences = await prisma.notificationPreference.findMany({
-      where: {
-        userId: { in: filteredRecipients },
+  try {
+    const trip = await prisma.trip.findUnique({
+      where: { id: params.tripId },
+      include: {
+        members: true,
+        owner: true,
       },
     });
 
-    const prefMap = new Map(preferences.map((p) => [p.userId, p]));
+    if (!trip) return;
 
-    filteredRecipients = filteredRecipients.filter((userId) => {
-      const pref = prefMap.get(userId);
-      if (!pref) return true;
-      return (pref as Record<string, unknown>)[prefKey] !== false;
+    const recipientIds = new Set<string>();
+
+    if (trip.ownerId && trip.ownerId !== params.actorUserId) {
+      recipientIds.add(trip.ownerId);
+    }
+
+    trip.members.forEach((member) => {
+      if (member.userId && member.userId !== params.actorUserId) {
+        recipientIds.add(member.userId);
+      }
     });
-  }
 
-  if (filteredRecipients.length === 0) {
-    return;
-  }
+    if (recipientIds.size === 0) {
+      return;
+    }
 
-  await prisma.notification.createMany({
-    data: filteredRecipients.map((userId) => ({
-      userId,
+    const prefKey =
+      NOTIFICATION_TYPE_TO_PREFERENCE[
+        params.type as keyof typeof NOTIFICATION_TYPE_TO_PREFERENCE
+      ];
+    let filteredRecipients = Array.from(recipientIds);
+
+    if (prefKey) {
+      const preferences = await prisma.notificationPreference.findMany({
+        where: {
+          userId: { in: filteredRecipients },
+        },
+      });
+
+      const prefMap = new Map(preferences.map((p) => [p.userId, p]));
+
+      filteredRecipients = filteredRecipients.filter((userId) => {
+        const pref = prefMap.get(userId);
+        if (!pref) return true;
+
+        return pref[prefKey as NotificationPreferenceField] !== false;
+      });
+    }
+
+    if (filteredRecipients.length === 0) {
+      return;
+    }
+
+    await prisma.notification.createMany({
+      data: filteredRecipients.map((userId) => ({
+        userId,
+        tripId: params.tripId,
+        type: params.type,
+        title: params.title,
+        message: params.message,
+      })),
+    });
+  } catch (error) {
+    console.error("Failed to create trip notifications", {
       tripId: params.tripId,
       type: params.type,
-      title: params.title,
-      message: params.message,
-    })),
-  });
+      error,
+    });
+  }
 }

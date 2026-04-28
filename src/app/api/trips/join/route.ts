@@ -2,16 +2,23 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { getAvailableName } from "@/lib/utils";
+import { formatZodErrors, joinTripSchema } from "@/lib/validations";
 
 export async function POST(request: Request) {
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
 
-  const { inviteCode } = await request.json();
+  const body = await request.json();
+  const parsed = joinTripSchema.safeParse(body);
 
-  if (!inviteCode) {
-    return NextResponse.json({ error: "請提供邀請碼" }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(parsed.error) },
+      { status: 400 }
+    );
   }
+
+  const { inviteCode } = parsed.data;
 
   const trip = await prisma.trip.findUnique({
     where: { inviteCode },

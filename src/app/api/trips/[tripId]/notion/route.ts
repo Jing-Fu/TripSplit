@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { forbidden, requireUser } from "@/lib/auth";
-import { logActivity } from "@/lib/activity";
 import { exportTripToNotion, NotionApiError, NotionConfigError } from "@/lib/notion";
-import { createNotificationsForTrip } from "@/lib/notifications";
+import { recordSideEffects } from "@/lib/side-effects";
 import { buildTripExportJSON, getTripForUser } from "@/lib/trip-export";
 
 export async function POST(
@@ -26,21 +25,21 @@ export async function POST(
     const payload = buildTripExportJSON(trip);
     const result = await exportTripToNotion(payload);
 
-    await logActivity({
+    await recordSideEffects({
       tripId: params.tripId,
       userId: user.id,
-      action: "notion_exported",
-      targetType: "trip",
-      targetId: params.tripId,
-      details: result.pageUrl,
-    });
-
-    await createNotificationsForTrip({
-      tripId: params.tripId,
-      actorUserId: user.id,
-      type: "notion_exported",
-      title: "旅程已匯出到 Notion",
-      message: `${user.name} 已將「${trip.name}」匯出到 Notion`,
+      activity: {
+        action: "notion_exported",
+        targetType: "trip",
+        targetId: params.tripId,
+        details: result.pageUrl,
+      },
+      notification: {
+        actorUserId: user.id,
+        type: "notion_exported",
+        title: "旅程已匯出到 Notion",
+        message: `${user.name} 已將「${trip.name}」匯出到 Notion`,
+      },
     });
 
     return NextResponse.json(result, { status: 201 });

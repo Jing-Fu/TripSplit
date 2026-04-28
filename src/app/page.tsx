@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLocale } from "@/lib/i18n/context";
 import { formatDate } from "@/lib/utils";
 
 type Trip = {
@@ -39,6 +40,7 @@ type Notification = {
 };
 
 export default function HomePage() {
+  const { t } = useLocale();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -109,7 +111,7 @@ export default function HomePage() {
     }
 
     const data = await res.json();
-    setJoinError(data.error || "邀請碼無效，請重新確認");
+    setJoinError(data.error || t("home.invalidInviteCode"));
   };
 
   const handleLogout = async () => {
@@ -156,12 +158,12 @@ export default function HomePage() {
 
       const data = await res.json();
       if (!res.ok) {
-        setImportError(data.error || "匯入失敗");
+        setImportError(data.error || t("home.importFailed"));
       } else {
         router.push(`/trips/${data.id}`);
       }
     } catch {
-      setImportError("備份檔格式錯誤，請確認為 TripSplit 匯出的 JSON");
+      setImportError(t("home.backupFormatInvalid"));
     } finally {
       setImporting(false);
       event.target.value = "";
@@ -207,12 +209,12 @@ export default function HomePage() {
                   {showNotifications && (
                     <div className="absolute right-0 top-12 z-20 w-80 rounded-2xl border border-gray-100 bg-white p-3 shadow-lg">
                       <div className="mb-2 flex items-center justify-between">
-                        <p className="text-sm font-medium text-gray-700">通知中心</p>
-                        <span className="text-xs text-gray-400">最近 50 筆</span>
+                        <p className="text-sm font-medium text-gray-700">{t("home.notificationCenter")}</p>
+                        <span className="text-xs text-gray-400">{t("home.recent50")}</span>
                       </div>
 
                       {notifications.length === 0 ? (
-                        <p className="py-4 text-center text-sm text-gray-400">目前沒有通知</p>
+                          <p className="py-4 text-center text-sm text-gray-400">{t("home.noNotifications")}</p>
                       ) : (
                         <div className="max-h-96 space-y-2 overflow-y-auto">
                           {notifications.map((notification) => (
@@ -254,13 +256,13 @@ export default function HomePage() {
                   onClick={handleLogout}
                   className="rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700"
                 >
-                  登出
+                  {t("common.logout")}
                 </button>
                 <Link
                   href="/trips/new"
                   className="rounded-2xl bg-primary-500 px-5 py-2.5 font-medium text-white shadow-md shadow-primary-200 transition-colors hover:bg-primary-600"
                 >
-                  + 新增旅程
+                  {t("home.newTrip")}
                 </Link>
               </>
             ) : (
@@ -268,7 +270,7 @@ export default function HomePage() {
                 href="/login"
                 className="rounded-2xl bg-primary-500 px-5 py-2.5 font-medium text-white shadow-md shadow-primary-200 transition-colors hover:bg-primary-600"
               >
-                登入後開始使用
+                {t("home.startAfterLogin")}
               </Link>
             )}
           </div>
@@ -278,14 +280,14 @@ export default function HomePage() {
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-8 rounded-3xl border border-primary-100 bg-white p-6 shadow-sm">
           <h2 className="mb-3 text-lg font-semibold text-gray-700">
-            🔗 用邀請碼加入旅程
+            {t("home.joinByInvite")}
           </h2>
           <div className="flex gap-3">
             <input
               type="text"
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
-              placeholder={user ? "輸入邀請碼..." : "請先登入後加入旅程"}
+              placeholder={user ? t("home.joinPlaceholder") : t("home.joinRequiresLogin")}
               disabled={!user}
               className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-300 disabled:bg-gray-50"
               onKeyDown={(e) => e.key === "Enter" && handleJoin()}
@@ -295,7 +297,7 @@ export default function HomePage() {
               className="rounded-xl bg-accent-500 px-6 py-2.5 font-medium text-white transition-colors hover:bg-accent-600 disabled:bg-accent-300"
               disabled={!user}
             >
-              加入
+              {t("common.join")}
             </button>
           </div>
           {joinError && <p className="mt-2 text-sm text-red-500">{joinError}</p>}
@@ -305,14 +307,14 @@ export default function HomePage() {
           <div className="mb-8 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-700">♻️ 匯入備份還原旅程</h2>
+                <h2 className="text-lg font-semibold text-gray-700">{t("home.importBackupTitle")}</h2>
                 <p className="mt-1 text-sm text-gray-400">
-                  支援匯入 TripSplit 匯出的 JSON 備份，系統會建立一份新的還原旅程。
+                  {t("home.importBackupDescription")}
                 </p>
               </div>
 
               <label className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-primary-500 px-5 py-2.5 font-medium text-white transition-colors hover:bg-primary-600">
-                {importing ? "匯入中..." : "匯入 JSON 備份"}
+                {importing ? t("home.importingJsonBackup") : t("home.importJsonBackup")}
                 <input
                   type="file"
                   accept="application/json"
@@ -369,32 +371,32 @@ export default function HomePage() {
           <div className="rounded-3xl border border-dashed border-gray-200 bg-white/70 px-6 py-14 text-center">
             <div className="mb-4 text-5xl">🔐</div>
             <h2 className="text-xl font-semibold text-gray-700">
-              先登入，才會看到你參與的旅程
+               {t("home.loginRequiredTitle")}
             </h2>
             <p className="mt-2 text-gray-400">
-              現在系統已支援身份識別與權限控制，旅程、記帳與結算都會綁定到你的帳號。
+               {t("home.loginRequiredDescription")}
             </p>
             <Link
               href="/login"
               className="mt-6 inline-block rounded-2xl bg-primary-500 px-8 py-3 font-medium text-white transition-colors hover:bg-primary-600"
             >
-              前往登入
+               {t("home.goToLogin")}
             </Link>
           </div>
         ) : loading ? (
-          <div className="py-20 text-center text-gray-400">載入中...</div>
+          <div className="py-20 text-center text-gray-400">{t("common.loading")}</div>
         ) : trips.length === 0 ? (
           <div className="py-20 text-center">
             <div className="mb-4 text-6xl">🌏</div>
             <h2 className="mb-2 text-xl font-semibold text-gray-600">
-              還沒有任何旅程
+               {t("home.noTripsTitle")}
             </h2>
-            <p className="mb-6 text-gray-400">建立你的第一趟旅行，開始記帳吧！</p>
+            <p className="mb-6 text-gray-400">{t("home.noTripsDescription")}</p>
             <Link
               href="/trips/new"
               className="inline-block rounded-2xl bg-primary-500 px-8 py-3 font-medium text-white shadow-md shadow-primary-200 transition-colors hover:bg-primary-600"
             >
-              🎒 開始新旅程
+               {t("home.startNewTrip")}
             </Link>
           </div>
         ) : (
@@ -408,7 +410,7 @@ export default function HomePage() {
                 <div className="mb-3 flex items-start justify-between">
                   <span className="text-4xl">{trip.coverEmoji}</span>
                   <span className="rounded-full bg-primary-50 px-3 py-1 text-xs text-primary-600">
-                    {trip._count.expenses} 筆
+                    {t("home.tripCount").replace("{count}", String(trip._count.expenses))}
                   </span>
                 </div>
                 <h3 className="text-lg font-bold text-gray-800 transition-colors group-hover:text-primary-600">

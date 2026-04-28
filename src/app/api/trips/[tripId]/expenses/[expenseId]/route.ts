@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
-import { logActivity } from "@/lib/activity";
-import { createNotificationsForTrip } from "@/lib/notifications";
+import { recordSideEffects } from "@/lib/side-effects";
+import { formatZodErrors, updateExpenseSchema } from "@/lib/validations";
 
 async function canManageExpense(userId: string, expenseId: string) {
   const expense = await prisma.expense.findUnique({
@@ -44,6 +44,15 @@ export async function PATCH(
   }
 
   const body = await request.json();
+  const parsed = updateExpenseSchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(parsed.error) },
+      { status: 400 }
+    );
+  }
+
   const {
     amount,
     currency,
@@ -58,7 +67,7 @@ export async function PATCH(
     receiptUrl,
     settlementMode,
     settlementNote,
-  } = body;
+  } = parsed.data;
 
   const trip = await prisma.trip.findUnique({
     where: { id: params.tripId },
@@ -98,9 +107,9 @@ export async function PATCH(
     return tx.expense.update({
       where: { id: params.expenseId },
       data: {
-        ...(amount !== undefined && { amount: parseFloat(amount) }),
+        ...(amount !== undefined && { amount }),
         ...(currency && { currency }),
-        ...(exchangeRate !== undefined && { exchangeRate: parseFloat(exchangeRate) }),
+        ...(exchangeRate !== undefined && { exchangeRate }),
         ...(category && { category }),
         ...(description && { description }),
         ...(note !== undefined && { note }),
@@ -129,21 +138,21 @@ export async function PATCH(
     });
   });
 
-  await logActivity({
+  await recordSideEffects({
     tripId: params.tripId,
     userId: user.id,
-    action: "expense_updated",
-    targetType: "expense",
-    targetId: expense.id,
-    details: `${expense.description} ${expense.amount} ${expense.currency}`,
-  });
-
-  await createNotificationsForTrip({
-    tripId: params.tripId,
-    actorUserId: user.id,
-    type: "expense_updated",
-    title: "消費已更新",
-    message: `${user.name} 更新了「${expense.description}」`,
+    activity: {
+      action: "expense_updated",
+      targetType: "expense",
+      targetId: expense.id,
+      details: `${expense.description} ${expense.amount} ${expense.currency}`,
+    },
+    notification: {
+      actorUserId: user.id,
+      type: "expense_updated",
+      title: "消費已更新",
+      message: `${user.name} 更新了「${expense.description}」`,
+    },
   });
 
   return NextResponse.json(serializePrisma(expense));
@@ -169,21 +178,21 @@ export async function DELETE(
   const expenseToDelete = permission.expense;
   await prisma.expense.delete({ where: { id: params.expenseId } });
 
-  await logActivity({
+  await recordSideEffects({
     tripId: params.tripId,
     userId: user.id,
-    action: "expense_deleted",
-    targetType: "expense",
-    targetId: params.expenseId,
-    details: `${expenseToDelete.description}`,
-  });
-
-  await createNotificationsForTrip({
-    tripId: params.tripId,
-    actorUserId: user.id,
-    type: "expense_deleted",
-    title: "消費已刪除",
-    message: `${user.name} 刪除了「${expenseToDelete.description}」`,
+    activity: {
+      action: "expense_deleted",
+      targetType: "expense",
+      targetId: params.expenseId,
+      details: `${expenseToDelete.description}`,
+    },
+    notification: {
+      actorUserId: user.id,
+      type: "expense_deleted",
+      title: "消費已刪除",
+      message: `${user.name} 刪除了「${expenseToDelete.description}」`,
+    },
   });
 
   return NextResponse.json({ success: true });

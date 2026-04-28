@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CURRENCIES, TRIP_EMOJIS } from "@/lib/constants";
+import { useLocale } from "@/lib/i18n/context";
 import { formatDateForInput } from "@/lib/utils";
 
 type User = {
@@ -13,6 +14,7 @@ type User = {
 };
 
 export default function NewTripPage() {
+  const { t } = useLocale();
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -74,7 +76,7 @@ export default function NewTripPage() {
     const data = await res.json();
 
     if (!res.ok) {
-      setError(data.error || "建立旅程失敗");
+      setError(data.error || t("newTrip.failed"));
       setSaving(false);
       return;
     }
@@ -83,7 +85,7 @@ export default function NewTripPage() {
   };
 
   if (checkingAuth) {
-    return <div className="py-20 text-center text-gray-400">登入狀態確認中...</div>;
+    return <div className="py-20 text-center text-gray-400">{t("newTrip.checkingAuth")}</div>;
   }
 
   return (
@@ -91,11 +93,15 @@ export default function NewTripPage() {
       <header className="sticky top-0 z-10 border-b border-primary-100 bg-white/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-2xl items-center gap-4 px-4 py-4">
           <Link href="/" className="text-gray-400 transition-colors hover:text-gray-600">
-            ← 返回
+            {t("newTrip.back")}
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-gray-800">🎒 新增旅程</h1>
-            {user && <p className="text-xs text-gray-400">建立者：{user.name}</p>}
+            <h1 className="text-xl font-bold text-gray-800">{t("newTrip.title")}</h1>
+            {user && (
+              <p className="text-xs text-gray-400">
+                {t("newTrip.creator").replace("{name}", user.name)}
+              </p>
+            )}
           </div>
         </div>
       </header>
@@ -104,12 +110,12 @@ export default function NewTripPage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-5 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="rounded-2xl bg-primary-50 px-4 py-3 text-sm text-primary-700">
-              你會自動成為旅程建立者與第一位成員，下面只需要補其他旅伴即可。
+              {t("newTrip.creatorNotice")}
             </div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-600">
-                旅程圖示
+                {t("newTrip.coverEmoji")}
               </label>
               <div className="flex flex-wrap gap-2">
                 {TRIP_EMOJIS.map((emoji) => (
@@ -131,39 +137,39 @@ export default function NewTripPage() {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-600">
-                旅程名稱 *
+                 {t("newTrip.name")}
               </label>
               <input
                 type="text"
                 required
                 value={form.name}
                 onChange={(e) => updateField("name", e.target.value)}
-                placeholder="例：2026 東京自由行"
+                placeholder={t("newTrip.namePlaceholder")}
                 className="w-full rounded-xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
               />
             </div>
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-600">
-                目的地
+                 {t("newTrip.destination")}
               </label>
               <input
                 type="text"
                 value={form.destination}
                 onChange={(e) => updateField("destination", e.target.value)}
-                placeholder="例：東京"
+                placeholder={t("newTrip.destinationPlaceholder")}
                 className="w-full rounded-xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
               />
             </div>
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-600">
-                簡述
+                 {t("newTrip.description")}
               </label>
               <textarea
                 value={form.description}
                 onChange={(e) => updateField("description", e.target.value)}
-                placeholder="旅程備忘..."
+                placeholder={t("newTrip.descriptionPlaceholder")}
                 rows={2}
                 className="w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
               />
@@ -172,7 +178,7 @@ export default function NewTripPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-600">
-                  開始日期 *
+                   {t("newTrip.startDate")}
                 </label>
                 <input
                   type="date"
@@ -184,7 +190,7 @@ export default function NewTripPage() {
               </div>
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-gray-600">
-                  結束日期
+                   {t("newTrip.endDate")}
                 </label>
                 <input
                   type="date"
@@ -197,7 +203,7 @@ export default function NewTripPage() {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-600">
-                主要幣別
+                 {t("newTrip.currency")}
               </label>
               <select
                 value={form.currency}
@@ -216,15 +222,15 @@ export default function NewTripPage() {
           <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-gray-700">👥 其他旅伴</h2>
-                <p className="text-xs text-gray-400">你的身份會由系統自動加入，不需要重複輸入。</p>
+                <h2 className="text-lg font-semibold text-gray-700">{t("newTrip.otherCompanions")}</h2>
+                <p className="text-xs text-gray-400">{t("newTrip.companionsHint")}</p>
               </div>
               <button
                 type="button"
                 onClick={addMember}
                 className="text-sm font-medium text-primary-500 hover:text-primary-600"
               >
-                + 新增成員
+                {t("newTrip.addMember")}
               </button>
             </div>
 
@@ -235,7 +241,7 @@ export default function NewTripPage() {
                     type="text"
                     value={member}
                     onChange={(e) => updateMember(idx, e.target.value)}
-                    placeholder={`旅伴 ${idx + 1} 的名字`}
+                    placeholder={t("newTrip.memberPlaceholder").replace("{index}", String(idx + 1))}
                     className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-300"
                   />
                   {members.length > 1 && (
@@ -259,7 +265,7 @@ export default function NewTripPage() {
             disabled={saving}
             className="w-full rounded-2xl bg-primary-500 py-3.5 text-lg font-semibold text-white shadow-md shadow-primary-200 transition-colors hover:bg-primary-600 disabled:bg-primary-300"
           >
-            {saving ? "建立中..." : "🚀 建立旅程"}
+             {saving ? t("newTrip.creating") : t("newTrip.create")}
           </button>
         </form>
       </main>

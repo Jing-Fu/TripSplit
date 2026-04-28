@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
+import { createCategorySchema, formatZodErrors } from "@/lib/validations";
 
 async function getTripForUser(tripId: string, userId: string) {
   return prisma.trip.findFirst({
@@ -65,9 +66,18 @@ export async function POST(
   }
 
   const body = await request.json();
-  const value = body.value?.trim();
-  const label = body.label?.trim();
-  const emoji = body.emoji?.trim();
+  const parsed = createCategorySchema.safeParse(body);
+
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(parsed.error) },
+      { status: 400 }
+    );
+  }
+
+  const value = parsed.data.value.trim();
+  const label = parsed.data.label.trim();
+  const emoji = parsed.data.emoji?.trim();
 
   if (!value || !label) {
     return NextResponse.json({ error: "value 與 label 為必填" }, { status: 400 });

@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
 import { getAvailableName } from "@/lib/utils";
-import { logActivity } from "@/lib/activity";
-import { createNotificationsForTrip } from "@/lib/notifications";
+import { recordSideEffects } from "@/lib/side-effects";
 import { createMemberSchema, formatZodErrors } from "@/lib/validations";
 
 export async function POST(
@@ -45,21 +44,21 @@ export async function POST(
     data: { name, tripId: params.tripId },
   });
 
-  await logActivity({
+  await recordSideEffects({
     tripId: params.tripId,
     userId: user.id,
-    action: "member_added",
-    targetType: "member",
-    targetId: member.id,
-    details: name,
-  });
-
-  await createNotificationsForTrip({
-    tripId: params.tripId,
-    actorUserId: user.id,
-    type: "member_added",
-    title: "旅伴已新增",
-    message: `${user.name} 新增了旅伴「${name}」`,
+    activity: {
+      action: "member_added",
+      targetType: "member",
+      targetId: member.id,
+      details: name,
+    },
+    notification: {
+      actorUserId: user.id,
+      type: "member_added",
+      title: "旅伴已新增",
+      message: `${user.name} 新增了旅伴「${name}」`,
+    },
   });
 
   return NextResponse.json(member, { status: 201 });
@@ -98,21 +97,21 @@ export async function DELETE(request: Request) {
 
   await prisma.member.delete({ where: { id: memberId } });
 
-  await logActivity({
+  await recordSideEffects({
     tripId: member.trip.id,
     userId: user.id,
-    action: "member_removed",
-    targetType: "member",
-    targetId: memberId,
-    details: member.name,
-  });
-
-  await createNotificationsForTrip({
-    tripId: member.trip.id,
-    actorUserId: user.id,
-    type: "member_removed",
-    title: "旅伴已移除",
-    message: `${user.name} 移除了旅伴「${member.name}」`,
+    activity: {
+      action: "member_removed",
+      targetType: "member",
+      targetId: memberId,
+      details: member.name,
+    },
+    notification: {
+      actorUserId: user.id,
+      type: "member_removed",
+      title: "旅伴已移除",
+      message: `${user.name} 移除了旅伴「${member.name}」`,
+    },
   });
 
   return NextResponse.json({ success: true });

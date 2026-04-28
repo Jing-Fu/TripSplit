@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import {
+  NOTIFICATION_PREFERENCE_FIELDS,
+  type NotificationPreferenceField,
+} from "@/lib/constants";
 
-const PREFERENCE_FIELDS = [
-  "expenseCreated",
-  "expenseUpdated",
-  "expenseDeleted",
-  "memberAdded",
-  "memberRemoved",
-  "paymentMarked",
-  "paymentUpdated",
-  "backupImported",
-] as const;
-
-type PreferenceField = (typeof PREFERENCE_FIELDS)[number];
+type PreferenceField = NotificationPreferenceField;
 
 async function getOrCreatePreference(userId: string) {
   return prisma.notificationPreference.upsert({
@@ -46,7 +39,7 @@ export async function PATCH(request: Request) {
   const updateData: Partial<Record<PreferenceField, boolean>> = {};
 
   for (const [key, value] of entries) {
-    if (!PREFERENCE_FIELDS.includes(key as PreferenceField)) {
+    if (!NOTIFICATION_PREFERENCE_FIELDS.includes(key as PreferenceField)) {
       return NextResponse.json({ error: `不支援的偏好設定欄位：${key}` }, { status: 400 });
     }
 

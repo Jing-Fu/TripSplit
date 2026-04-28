@@ -1,55 +1,28 @@
+import { z } from "zod";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { logActivity } from "@/lib/activity";
-import { createNotificationsForTrip } from "@/lib/notifications";
+import { recordSideEffects } from "@/lib/side-effects";
 import { generateInviteCode, getAvailableName } from "@/lib/utils";
+import { formatZodErrors, importTripSchema } from "@/lib/validations";
 
-type ImportPayload = {
-  trip?: {
-    name?: string;
-    description?: string | null;
-    destination?: string | null;
-    startDate?: string;
-    endDate?: string | null;
-    currency?: string;
-    coverEmoji?: string;
-  };
-  members?: Array<{ name?: string }>;
-  expenses?: Array<{
-    description?: string;
-    amount?: number;
-    currency?: string;
-    exchangeRate?: number;
-    category?: string;
-    date?: string;
-    paidBy?: string;
-    splitType?: string;
-    note?: string | null;
-    settlementMode?: string;
-    settlementNote?: string | null;
-    splits?: Array<{ member?: string; amount?: number }>;
-  }>;
-  payments?: Array<{
-    from?: string;
-    to?: string;
-    amount?: number;
-    currency?: string;
-    status?: string;
-    settledAt?: string;
-    note?: string | null;
-  }>;
-};
+type ImportPayload = z.infer<typeof importTripSchema>;
 
 export async function POST(request: Request) {
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
 
-  const payload = (await request.json()) as ImportPayload;
+  const body = await request.json();
+  const parsed = importTripSchema.safeParse(body);
 
-  if (!payload.trip?.name || !payload.trip?.startDate) {
-    return NextResponse.json({ error: "備份檔缺少旅程基本資料" }, { status: 400 });
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: formatZodErrors(parsed.error) },
+      { status: 400 }
+    );
   }
+
+  const payload: ImportPayload = parsed.data;
 
   const memberNames = Array.isArray(payload.members)
     ? payload.members.map((member) => member.name?.trim()).filter(Boolean) as string[]
@@ -148,21 +121,21 @@ export async function POST(request: Request) {
     return trip;
   });
 
-  await logActivity({
+  await recordSideEffects({
     tripId: restoredTrip.id,
     userId: user.id,
-    action: "backup_imported",
-    targetType: "trip",
-    targetId: restoredTrip.id,
-    details: `${payload.trip?.name || restoredTrip.name} 已從備份還原`,
-  });
-
-  await createNotificationsForTrip({
-    tripId: restoredTrip.id,
-    actorUserId: user.id,
-    type: "backup_imported",
-    title: "旅程已從備份還原",
-    message: `${user.name} 匯入了備份並建立「${restoredTrip.name}」`,
+    activity: {
+      action: "backup_imported",
+      targetType: "trip",
+      targetId: restoredTrip.id,
+      details: `${payload.trip.name || restoredTrip.name} 已從備份還原`,
+    },
+    notification: {
+      actorUserId: user.id,
+      type: "backup_imported",
+      title: "旅程已從備份還原",
+      message: `${user.name} 匯入了備份並建立「${restoredTrip.name}」`,
+    },
   });
 
   return NextResponse.json(restoredTrip, { status: 201 });

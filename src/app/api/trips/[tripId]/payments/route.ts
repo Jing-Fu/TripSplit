@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
-import { logActivity } from "@/lib/activity";
-import { createNotificationsForTrip } from "@/lib/notifications";
+import { recordSideEffects } from "@/lib/side-effects";
 import { createPaymentSchema, formatZodErrors } from "@/lib/validations";
 
 export async function POST(
@@ -28,7 +27,6 @@ export async function POST(
   }
 
   const body = await request.json();
-  const { fromMemberId, toMemberId, amount, note } = body;
 
   const result = createPaymentSchema.safeParse(body);
 
@@ -61,21 +59,21 @@ export async function POST(
     },
   });
 
-  await logActivity({
+  await recordSideEffects({
     tripId: params.tripId,
     userId: user.id,
-    action: "payment_marked",
-    targetType: "payment",
-    targetId: payment.id,
-    details: `${payment.fromMember.name} → ${payment.toMember.name} ${payment.amount} ${payment.currency}`,
-  });
-
-  await createNotificationsForTrip({
-    tripId: params.tripId,
-    actorUserId: user.id,
-    type: "payment_marked",
-    title: "新增付款紀錄",
-    message: `${payment.fromMember.name} → ${payment.toMember.name} ${payment.amount} ${payment.currency}`,
+    activity: {
+      action: "payment_marked",
+      targetType: "payment",
+      targetId: payment.id,
+      details: `${payment.fromMember.name} → ${payment.toMember.name} ${payment.amount} ${payment.currency}`,
+    },
+    notification: {
+      actorUserId: user.id,
+      type: "payment_marked",
+      title: "新增付款紀錄",
+      message: `${payment.fromMember.name} → ${payment.toMember.name} ${payment.amount} ${payment.currency}`,
+    },
   });
 
   return NextResponse.json(serializePrisma(payment), { status: 201 });
