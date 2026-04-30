@@ -1,0 +1,10 @@
+{
+  "iss": "https://access.line.me",
+  "sub": "U_test_user_001",
+  "aud": "test-liff-channel-id",
+  "exp": 9999999999,
+  "iat": 1700000000,
+  "name": "テストユーザー",
+  "picture": "https://example.com/avatar.jpg",
+  "email": "test@example.com"
+}

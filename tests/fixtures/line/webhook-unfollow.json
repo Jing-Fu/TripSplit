@@ -1,0 +1,16 @@
+{
+  "destination": "U_test_bot_001",
+  "events": [
+    {
+      "type": "unfollow",
+      "mode": "active",
+      "timestamp": 1700000000000,
+      "source": {
+        "type": "user",
+        "userId": "U_test_user_001"
+      },
+      "webhookEventId": "test-event-id-003",
+      "deliveryContext": { "isRedelivery": false }
+    }
+  ]
+}

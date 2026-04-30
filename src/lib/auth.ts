@@ -59,6 +59,29 @@ export async function createUserSession(userId: string) {
   return { token, expiresAt };
 }
 
+export async function createSessionForLineUser(profile: {
+  lineUserId: string;
+  name: string;
+  picture?: string;
+}) {
+  const user = await prisma.user.upsert({
+    where: { lineUserId: profile.lineUserId },
+    update: {
+      lineDisplayName: profile.name,
+      linePictureUrl: profile.picture ?? null,
+    },
+    create: {
+      lineUserId: profile.lineUserId,
+      name: profile.name,
+      lineDisplayName: profile.name,
+      linePictureUrl: profile.picture ?? null,
+      linePushEnabled: true,
+    },
+  });
+
+  return createUserSession(user.id);
+}
+
 export function setSessionCookie(
   response: NextResponse,
   token: string,
@@ -68,8 +91,8 @@ export function setSessionCookie(
     name: AUTH_COOKIE_NAME,
     value: token,
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
+    secure: true,
     expires: expiresAt,
     path: "/",
   });
@@ -80,8 +103,8 @@ export function clearSessionCookie(response: NextResponse) {
     name: AUTH_COOKIE_NAME,
     value: "",
     httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
+    secure: true,
     expires: new Date(0),
     path: "/",
   });

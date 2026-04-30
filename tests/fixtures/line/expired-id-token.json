@@ -1,0 +1,10 @@
+{
+  "iss": "https://access.line.me",
+  "sub": "U_test_user_001",
+  "aud": "test-liff-channel-id",
+  "exp": 1000000000,
+  "iat": 999999999,
+  "name": "テストユーザー",
+  "error": "invalid_request",
+  "error_description": "The access token expired"
+}

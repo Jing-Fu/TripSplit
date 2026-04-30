@@ -1,136 +1,10 @@
 "use client";
 
-import Script from "next/script";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocale } from "@/lib/i18n/context";
-
-type GoogleCredentialResponse = {
-  credential?: string;
-};
-
-type GoogleAccountsId = {
-  initialize: (config: {
-    client_id: string;
-    callback: (response: GoogleCredentialResponse) => void;
-    use_fedcm_for_button?: boolean;
-    ux_mode?: "popup" | "redirect";
-    login_uri?: string;
-    state?: string;
-  }) => void;
-  renderButton: (
-    element: HTMLElement,
-    options: {
-      theme?: "outline" | "filled_blue" | "filled_black";
-      size?: "large" | "medium" | "small";
-      text?: "signin_with" | "signup_with" | "continue_with" | "signin";
-      shape?: "rectangular" | "pill" | "circle" | "square";
-      width?: number;
-      locale?: string;
-      logo_alignment?: "left" | "center";
-    }
-  ) => void;
-};
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: GoogleAccountsId;
-      };
-    };
-  }
-}
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
-  const { t } = useLocale();
-  const router = useRouter();
-  const buttonRef = useRef<HTMLDivElement | null>(null);
-  const initializedRef = useRef(false);
-  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const [loading, setLoading] = useState(false);
-  const [googleReady, setGoogleReady] = useState(false);
   const [error, setError] = useState("");
-
-  const isIos = useCallback(() => {
-    if (typeof navigator === "undefined") return false;
-
-    return /iPad|iPhone|iPod/.test(navigator.userAgent);
-  }, []);
-
-  const handleCredential = useCallback(
-    async (credential: string) => {
-      if (!credential) {
-        setError("Google 登入憑證遺失，請重新嘗試");
-        return;
-      }
-
-      setLoading(true);
-      setError("");
-
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential }),
-      });
-
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
-
-      if (!res.ok) {
-        setError(data?.error || t("login.failed"));
-        setLoading(false);
-        return;
-      }
-
-      router.push("/");
-      router.refresh();
-    },
-    [router, t]
-  );
-
-  const initializeGoogleButton = useCallback(() => {
-    if (
-      initializedRef.current ||
-      !googleClientId ||
-      !buttonRef.current ||
-      !window.google?.accounts.id
-    ) {
-      return;
-    }
-
-    const useRedirectMode = isIos();
-
-    window.google.accounts.id.initialize({
-      client_id: googleClientId,
-      callback: (response) => {
-        void handleCredential(response.credential ?? "");
-      },
-      use_fedcm_for_button: true,
-      ux_mode: useRedirectMode ? "redirect" : "popup",
-      login_uri: `${appUrl}/api/auth/login`,
-      state: "/",
-    });
-
-    buttonRef.current.innerHTML = "";
-    window.google.accounts.id.renderButton(buttonRef.current, {
-      theme: "outline",
-      size: "large",
-      text: "signin_with",
-      shape: "pill",
-      width: 320,
-      locale: "zh-TW",
-      logo_alignment: "left",
-    });
-
-    initializedRef.current = true;
-    setGoogleReady(true);
-  }, [appUrl, googleClientId, handleCredential, isIos]);
-
-  useEffect(() => {
-    initializeGoogleButton();
-  }, [initializeGoogleButton]);
 
   useEffect(() => {
     const message = new URLSearchParams(window.location.search).get("error");
@@ -139,59 +13,39 @@ export default function LoginPage() {
     }
   }, []);
 
-  const hasGoogleClientId = Boolean(googleClientId);
+  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  const lineLoginUrl = liffId
+    ? `https://liff.line.me/${liffId}`
+    : "#";
 
   return (
-    <>
-      {hasGoogleClientId && (
-        <Script
-          src="https://accounts.google.com/gsi/client"
-          strategy="afterInteractive"
-          onLoad={initializeGoogleButton}
-        />
-      )}
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50 px-4 py-10">
+      <div className="mx-auto max-w-md">
+        <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
+          ← 返回首頁
+        </Link>
 
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50 px-4 py-10">
-        <div className="mx-auto max-w-md">
-          <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
-            {t("login.backHome")}
-          </Link>
+        <div className="mt-6 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+          <h1 className="text-2xl font-bold text-gray-800">登入 TripSplit</h1>
+          <p className="mt-2 text-sm text-gray-400">
+            使用 LINE 帳號登入，開始管理你的旅遊分帳。
+          </p>
 
-          <div className="mt-6 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-            <h1 className="text-2xl font-bold text-gray-800">{t("login.title")}</h1>
-            <p className="mt-2 text-sm text-gray-400">
-              {t("login.description")}
-            </p>
-
-            <div className="mt-6 rounded-2xl bg-primary-50 px-4 py-3 text-sm text-primary-700">
-              若你的 Google Email 已存在於系統中，TripSplit 會自動綁定原帳號並保留既有顯示名稱。
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-              手機測試時請使用 `npm run dev:lan` 啟動，並將目前瀏覽網址加入 Google Console 的 Authorized JavaScript origins / redirect URIs。
-            </div>
-
-            {!hasGoogleClientId ? (
-              <div className="mt-6 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
-                尚未設定 Google 登入，請先在環境變數加入 <code>NEXT_PUBLIC_GOOGLE_CLIENT_ID</code>。
-              </div>
-            ) : (
-              <div className="mt-6 space-y-4">
-                <div className="flex min-h-[44px] justify-center" ref={buttonRef} />
-                {!googleReady && (
-                  <p className="text-center text-sm text-gray-400">正在載入 Google 登入按鈕...</p>
-                )}
-              </div>
-            )}
-
-            {loading && (
-              <p className="mt-4 text-center text-sm text-gray-500">{t("login.submitting")}</p>
-            )}
-
-            {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
+          <div className="mt-6">
+            <a
+              href={lineLoginUrl}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-[#06C755] px-6 py-3 text-white font-medium hover:bg-[#05b34c] transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314" />
+              </svg>
+              使用 LINE 登入
+            </a>
           </div>
+
+          {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
         </div>
       </div>
-    </>
+    </div>
   );
 }

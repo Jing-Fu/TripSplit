@@ -1,0 +1,23 @@
+{
+  "destination": "U_test_bot_001",
+  "events": [
+    {
+      "type": "message",
+      "mode": "active",
+      "timestamp": 1700000000000,
+      "source": {
+        "type": "user",
+        "userId": "U_test_user_001"
+      },
+      "webhookEventId": "test-event-id-001",
+      "deliveryContext": { "isRedelivery": false },
+      "replyToken": "test-reply-token",
+      "message": {
+        "id": "test-message-id",
+        "type": "text",
+        "quoteToken": "test-quote-token",
+        "text": "Hello"
+      }
+    }
+  ]
+}

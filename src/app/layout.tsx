@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { LocaleProvider } from "@/lib/i18n";
+import { LiffProvider } from "@/app/_components/LiffProvider";
 
 export const metadata: Metadata = {
   title: "旅行記帳 ✈️ TripSplit",
@@ -23,7 +24,7 @@ export default function RootLayout({
   return (
     <html lang="zh-TW" className="h-full">
       <body className="min-h-full flex flex-col antialiased">
-        <LocaleProvider>{children}</LocaleProvider>
+        <LocaleProvider><LiffProvider>{children}</LiffProvider></LocaleProvider>
       </body>
     </html>
   );
