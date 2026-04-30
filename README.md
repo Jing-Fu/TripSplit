@@ -11,9 +11,12 @@
 - [目前已具備的功能](#目前已具備的功能)
 - [技術架構](#技術架構)
 - [快速開始](#快速開始)
+- [環境變數說明](#環境變數說明)
 - [使用流程](#使用流程)
+- [認證機制](#認證機制)
 - [資料與檔案說明](#資料與檔案說明)
 - [主要頁面與 API](#主要頁面與-api)
+- [部署說明](#部署說明)
 - [目前限制與注意事項](#目前限制與注意事項)
 
 ## 專案特色
@@ -29,8 +32,8 @@
 
 ### 1. 帳號與身份識別
 
-- 使用 Email + 顯示名稱登入
-- 首次登入可直接建立帳號
+- 整合 LINE Login (LIFF + Web OAuth)
+- 首次登入自動建立帳號
 - 使用資料庫 session 與 cookie 維持登入狀態
 - 旅程、成員、費用與付款紀錄都會綁定到使用者身份
 
@@ -53,7 +56,7 @@
 
 - 新增、編輯、刪除費用
 - 記錄金額、幣別、匯率、日期、說明、備註、付款人
-- 支援收據圖片上傳
+- 支援收據圖片上傳（儲存於 Cloudflare R2）
 - 支援以下分帳方式：
   - 平均分攤
   - 按比例分攤
@@ -76,7 +79,7 @@
 
 - 可上傳圖片格式收據
 - 檔案大小限制為 10MB
-- 目前會將檔案寫入 `public/uploads`
+- 使用 Cloudflare R2 雲端物件儲存
 - 上傳後可在費用項目中查看收據
 
 ### 7. 自動結算與付款紀錄
@@ -112,7 +115,7 @@
 - 匯出費用清單 `.csv`
 - 匯出結算 PDF
 - 匯出結算圖片
-- 旅程擁有者可建立伺服器端備份
+- 旅程擁有者可手動觸發備份，備份檔儲存於 Cloudflare R2
 - 可從 JSON 備份匯入並建立「已還原」的新旅程
 
 ### 11. 統計與總結
@@ -156,19 +159,22 @@
 - Next.js 14
 - React 18
 - Tailwind CSS
+- LIFF SDK
 
 ### 後端 / 資料層
 
 - Next.js Route Handlers
 - Prisma ORM
-- PostgreSQL
+- Supabase Postgres (PostgreSQL)
+- Cloudflare R2 (物件儲存)
 - Zod 驗證
 
 ### 其他能力
 
+- LINE Login: 身份認證
 - `html2canvas`：匯出結算圖片
 - `jsPDF`：匯出結算 PDF
-- `nanoid` / `uuid`：產生 session token 與檔名
+- Vercel Cron: 定時結算提醒與任務
 
 ## 快速開始
 
@@ -177,80 +183,27 @@
 - Node.js
 - npm
 
-本專案有 `package-lock.json`，建議直接使用 `npm`。
-
 ### 1. 安裝依賴
 
 ```bash
+git clone https://github.com/your-repo/TripSplit.git
+cd TripSplit
 npm install
 ```
 
-### 2. 環境變數
+### 2. 設定環境變數
 
-請在專案根目錄建立 `.env`，或直接從 `.env.example` 複製：
+請在專案根目錄建立 `.env`，或從 `.env.example` 複製。詳細設定方式請參考 `docs/setup/phase-0-external-provisioning.md`。
 
 ```bash
 cp .env.example .env
 ```
 
-目前預設：
-
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/tripsplit?schema=public"
-APP_URL="http://localhost:3000"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
-NEXT_PUBLIC_GOOGLE_CLIENT_ID="your-google-client-id.apps.googleusercontent.com"
-```
-
-- `GOOGLE_CLIENT_ID`：後端驗證 Google ID token 使用
-- `NEXT_PUBLIC_GOOGLE_CLIENT_ID`：前端載入 Google Sign-In 按鈕使用
-- `APP_URL` / `NEXT_PUBLIC_APP_URL`：登入 redirect mode 與前端頁面顯示使用，開發時預設為 `http://localhost:3000`
-
-若要用 **手機或同網段裝置** 測試，請改用區網網址，例如：
-
-```env
-APP_URL="http://192.168.1.10:3000"
-NEXT_PUBLIC_APP_URL="http://192.168.1.10:3000"
-```
-
-並在 Google Cloud Console 的這組 OAuth Web client 補上：
-
-- **Authorized JavaScript origins**
-  - `http://localhost`
-  - `http://localhost:3000`
-  - `http://192.168.1.10:3000`（請換成你的實際 LAN 位址）
-- **Authorized redirect URIs**
-  - `http://localhost:3000/api/auth/login`
-  - `http://192.168.1.10:3000/api/auth/login`（手機/LAN 測試需要）
-
-若要啟用 **Notion 匯出**，請另外加入：
-
-```env
-NOTION_TOKEN="secret_xxx"
-NOTION_PARENT_PAGE_ID="your_notion_page_id"
-```
-
-- `NOTION_TOKEN`：Notion integration 的 internal token
-- `NOTION_PARENT_PAGE_ID`：作為匯出父層的 Notion 頁面 ID，TripSplit 會在這個頁面下建立旅程子頁
-- 請把這兩個值保留在 server 端環境變數，不要使用 `NEXT_PUBLIC_` 前綴
-
-> [!IMPORTANT]
-> 正式部署請使用 PostgreSQL，並將 `DATABASE_URL` 指向可持久化的託管資料庫。
-
-### 3. 初始化 Prisma 資料庫
-
-第一次啟動前，請先產生 Prisma Client 並建立 Prisma migration：
+### 3. 初始化資料庫
 
 ```bash
 npm run db:generate
 npm run db:migrate:dev
-```
-
-部署到正式環境時，請改用：
-
-```bash
-npm run db:migrate:deploy
 ```
 
 ### 4. 啟動開發環境
@@ -259,36 +212,46 @@ npm run db:migrate:deploy
 npm run dev
 ```
 
-> [!TIP]
-> 不要使用 `npx run dev`。那會嘗試執行名為 `dev` 的 Node 模組，因此出現 `Cannot find module '/.../dev'`。
+## 環境變數說明
 
-若要讓手機透過同網段連入，請使用：
+```env
+# App
+APP_URL=https://your-app.vercel.app
+NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
 
-```bash
-npm run dev:lan
-```
+# Database (Supabase)
+# 使用 Connection Pooling
+DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
+# 用於 Migration 的直接連線
+DATABASE_DIRECT_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
 
-### 5. 建置正式版本
+# LINE Messaging API
+LINE_CHANNEL_SECRET=your-channel-secret
+LINE_CHANNEL_ACCESS_TOKEN=your-channel-access-token
 
-```bash
-npm run build
-```
+# LINE Login (Web OAuth)
+LINE_LOGIN_CHANNEL_ID=your-login-channel-id
+LINE_LOGIN_CHANNEL_SECRET=your-login-channel-secret
+LINE_LOGIN_REDIRECT_URI=https://your-app.vercel.app/api/auth/line/oauth/callback
 
-### 6. 啟動正式模式
+# LIFF
+LIFF_CHANNEL_ID=your-liff-channel-id
+NEXT_PUBLIC_LIFF_ID=your-liff-id
 
-```bash
-npm run start
-```
+# Cloudflare R2
+R2_ACCOUNT_ID=your-account-id
+R2_ACCESS_KEY_ID=your-access-key-id
+R2_SECRET_ACCESS_KEY=your-secret-access-key
+R2_BUCKET=tripsplit-uploads
+R2_PUBLIC_URL=https://pub-xxx.r2.dev
 
-### 7. 執行程式碼檢查
-
-```bash
-npm run lint
+# Cron
+CRON_SECRET=your-random-secret
 ```
 
 ## 使用流程
 
-1. 先登入或建立帳號
+1. 透過 LINE LIFF 或 Web 登入
 2. 建立一趟旅程，設定旅程資訊與旅伴
 3. 使用邀請碼讓其他成員加入
 4. 在旅程中持續記錄每筆花費
@@ -297,6 +260,12 @@ npm run lint
 7. 完成付款後標記為已付款
 8. 在需要時匯出報表、建立備份或從 JSON 還原
 
+## 認證機制
+
+本專案整合 LINE 認證體系：
+- **LINE App 內 (LIFF)**: 透過 LIFF SDK 自動登入。
+- **外部瀏覽器 (Web OAuth)**: 經由 `/api/auth/line/oauth/start` 觸發 LINE Login 流程。
+
 ## 資料與檔案說明
 
 ### 重要目錄
@@ -304,8 +273,7 @@ npm run lint
 - `src/app/`：頁面與 API route
 - `src/lib/`：auth、settlement、notifications、validation、i18n 等核心邏輯
 - `prisma/schema.prisma`：資料模型與資料庫設定
-- `public/uploads/`：收據圖片上傳位置
-- `public/backups/`：伺服器端備份輸出位置
+- `docs/setup/`：外部服務開通指引與設定文件
 
 ### 主要資料模型
 
@@ -333,27 +301,31 @@ npm run lint
 
 ### API 類型
 
-- `/api/auth/*`：登入、登出、session
+- `/api/auth/*`：LINE Login (LIFF & OAuth) 相關介面
 - `/api/trips`：旅程列表與建立旅程
 - `/api/trips/join`：邀請碼加入旅程
 - `/api/trips/import`：匯入備份
 - `/api/trips/[tripId]/*`：旅程內容、成員、費用、付款、類別、備份、活動紀錄
 - `/api/notifications/*`：通知與通知偏好
-- `/api/upload`：收據上傳
+- `/api/upload`：收據上傳至 R2
 - `/api/exchange-rate`：匯率查詢
+
+## 部署說明
+
+本專案建議部署於 **Vercel**：
+1. 在 Vercel Dashboard 設定上述所有環境變數。
+2. 專案包含 `vercel.json`，已預設配置每日 09:00 UTC 的結算提醒 Cron Job。
+3. 建議將 Vercel 部署區域設定在與 Supabase 資料庫相同的區域（例如新加坡 `sin1`）以獲得最佳效能。
 
 ## 目前限制與注意事項
 
 > [!WARNING]
-> README 內容以目前程式碼實作為準，而不是規劃文件或待辦清單。
+> README 內容以目前程式碼實作為準。
 
-- 認證目前為簡易 Email + 顯示名稱登入，尚未整合 OAuth 或密碼機制
-- 資料庫設定已切換為 PostgreSQL；部署前需要自行準備可持久化的資料庫服務
-- 專案目前沒有定義 Docker、CI/CD 或雲端部署設定檔
-- Prisma migration 已納入腳本，但目前沒有自動化 release phase / migration pipeline
-- 收據檔案目前儲存在本機檔案系統，而非雲端物件儲存
-- 程式中已建立 i18n 架構，但目前未見完整的語系切換 UI
-- 規劃文件中提到的部分未來功能，若未出現在目前程式碼中，並不代表已完成
+- 認證目前全面切換為 LINE Login，不再支援傳統 Email 登入。
+- 資料庫使用 Supabase (Postgres)；部署前請確保已完成 Schema Migration。
+- 收據檔案與備份均儲存於 Cloudflare R2，不佔用伺服器本機空間。
+- 專案已整合 Vercel Cron，定時任務需在 Vercel 環境中方可完整運作。
 
 ## 專案腳本
 
@@ -377,5 +349,3 @@ npm run lint
 - 朋友出國分帳
 - 小型團體旅程費用整理
 - 行程結束後產出結算與統計摘要
-
-如果你想繼續擴充這個專案，下一步很適合補上的方向會是：更完整的部署流程、雲端檔案儲存、正式認證機制，以及更完整的語系切換體驗。
