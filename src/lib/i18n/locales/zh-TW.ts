@@ -64,15 +64,15 @@ export const zhTW = {
   },
   login: {
     backHome: "← 返回首頁",
-    title: "使用 Google 登入 TripSplit",
+    title: "使用 LINE 登入 TripSplit",
     description:
-      "你的 Google 帳號會成為 TripSplit 的唯一登入方式。登入成功後，旅程、加入旅程與權限控制仍會沿用目前的帳號身份。",
-    email: "Google Email",
+      "你的 LINE 帳號會成為 TripSplit 的唯一登入方式。登入成功後，旅程、加入旅程與權限控制仍會沿用目前的帳號身份。",
+    email: "LINE Email",
     displayName: "顯示名稱",
     displayNamePlaceholder: "系統會保留既有顯示名稱",
-    submit: "使用 Google 登入",
-    submitting: "Google 驗證中...",
-    failed: "Google 登入失敗",
+    submit: "使用 LINE 登入",
+    submitting: "LINE 驗證中...",
+    failed: "LINE 登入失敗",
   },
   newTrip: {
     checkingAuth: "登入狀態確認中...",

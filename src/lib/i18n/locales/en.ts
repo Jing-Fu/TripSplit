@@ -66,15 +66,15 @@ export const en: Messages = {
   },
   login: {
     backHome: "← Back to home",
-    title: "Continue to TripSplit with Google",
+    title: "Continue to TripSplit with LINE",
     description:
-      "Your Google account becomes the only way to log in to TripSplit. After sign-in, trips, joining flows, and permissions still use your existing TripSplit identity.",
-    email: "Google email",
+      "Your LINE account becomes the only way to log in to TripSplit. After sign-in, trips, joining flows, and permissions still use your existing TripSplit identity.",
+    email: "LINE email",
     displayName: "Display name",
     displayNamePlaceholder: "TripSplit keeps your existing display name when linking",
-    submit: "Continue with Google",
-    submitting: "Verifying with Google...",
-    failed: "Google sign-in failed",
+    submit: "Continue with LINE",
+    submitting: "Verifying with LINE...",
+    failed: "LINE sign-in failed",
   },
   newTrip: {
     checkingAuth: "Checking login status...",
