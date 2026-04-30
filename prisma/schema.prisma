@@ -1,11 +1,12 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  directUrl = env("DATABASE_DIRECT_URL")
 }
 
 
@@ -31,14 +32,17 @@ model Trip {
   notifications Notification[]
   customCategories CustomCategory[]
   backupRecords    BackupRecord[]
+  settlementReminders SettlementReminder[]
 
   @@index([ownerId])
 }
 
 model User {
   id              String              @id @default(cuid())
-  email           String              @unique
-  googleSub       String?             @unique
+  lineUserId      String              @unique
+  linePushEnabled  Boolean             @default(true)
+  lineDisplayName  String?
+  linePictureUrl   String?
   name            String
   avatarUrl       String?
   createdAt       DateTime            @default(now())
@@ -52,6 +56,21 @@ model User {
   activityLogs    ActivityLog[]       @relation("ActivityLogUser")
   notifications   Notification[]
   notificationPreference NotificationPreference?
+  paymentMethods  PaymentMethod[]
+  settlementReminders SettlementReminder[]
+}
+
+model PaymentMethod {
+  id        String   @id @default(cuid())
+  userId    String
+  label     String
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Session {
@@ -156,6 +175,19 @@ model SettlementPayment {
   @@index([settledById])
 }
 
+model SettlementReminder {
+  id          String   @id @default(cuid())
+  tripId      String
+  userId      String
+  attemptedAt DateTime @default(now())
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, userId])
+  @@index([userId])
+}
+
 model ActivityLog {
   id         String   @id @default(cuid())
   tripId     String
@@ -221,7 +253,8 @@ model BackupRecord {
   id        String   @id @default(cuid())
   tripId    String
   fileName  String
-  filePath  String
+  storageKey String
+  contentType String?
   fileSize  Int
   createdAt DateTime @default(now())
 
