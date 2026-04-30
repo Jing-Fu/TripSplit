@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { getStorage } from "@/lib/storage";
+import { uploadObject, getSignedReadUrl } from "@/lib/storage";
 
 export async function POST(request: Request) {
   try {
@@ -24,10 +24,12 @@ export async function POST(request: Request) {
 
     const ext = file.name.split(".").pop() || "jpg";
     const filename = `${uuidv4()}.${ext}`;
+    const key = `uploads/${filename}`;
 
-    const url = await getStorage().writeFile(`uploads/${filename}`, buffer);
+    await uploadObject(key, buffer, file.type);
+    const url = await getSignedReadUrl(key);
 
-    return NextResponse.json({ url });
+    return NextResponse.json({ url, key });
   } catch {
     return NextResponse.json({ error: "收據上傳失敗，請稍後再試" }, { status: 500 });
   }

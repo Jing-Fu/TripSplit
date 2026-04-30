@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordSideEffects } from "@/lib/side-effects";
-import { getStorage } from "@/lib/storage";
+import { uploadObject } from "@/lib/storage";
 import { buildTripExportJSON, getTripForUser } from "@/lib/trip-export";
 
 export async function GET(
@@ -46,17 +46,14 @@ export async function POST(
   const content = JSON.stringify(payload, null, 2);
   const fileSize = Buffer.byteLength(content, "utf8");
 
-  const publicFilePath = await getStorage().writeFile(
-    `backups/${fileName}`,
-    content,
-    "utf8"
-  );
+  const key = `backups/${fileName}`;
+  await uploadObject(key, Buffer.from(content, "utf8"), "application/json");
 
   const backupRecord = await prisma.backupRecord.create({
     data: {
       tripId: params.tripId,
       fileName,
-      filePath: publicFilePath,
+      storageKey: key,
       fileSize,
     },
     select: {

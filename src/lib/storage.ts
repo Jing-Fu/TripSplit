@@ -1,48 +1,85 @@
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-/**
- * Abstraction over file persistence so upload / backup routes
- * don't depend on the local filesystem directly.
- *
- * Default implementation writes to `public/` (local FS).
- * Swap with `setStorage()` for S3, GCS, R2, etc.
- */
-export interface StorageAdapter {
-  /** Persist a file and return a public-facing URL path. */
-  writeFile(
-    relativePath: string,
-    content: Buffer | string,
-    encoding?: BufferEncoding
-  ): Promise<string>;
-}
-
-class LocalStorageAdapter implements StorageAdapter {
-  private baseDir: string;
-
-  constructor(baseDir?: string) {
-    this.baseDir = baseDir ?? path.join(process.cwd(), "public");
-  }
-
-  async writeFile(
-    relativePath: string,
-    content: Buffer | string,
-    encoding?: BufferEncoding
-  ): Promise<string> {
-    const fullPath = path.join(this.baseDir, relativePath);
-    const dir = path.dirname(fullPath);
-    await mkdir(dir, { recursive: true });
-    await writeFile(fullPath, content, encoding);
-    return `/${relativePath}`;
+export class StorageError extends Error {
+  constructor(message: string, public readonly cause?: unknown) {
+    super(message);
+    this.name = "StorageError";
   }
 }
 
-let storage: StorageAdapter = new LocalStorageAdapter();
+function getClient(): S3Client {
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
 
-export function getStorage(): StorageAdapter {
-  return storage;
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    throw new StorageError("R2 credentials not configured");
+  }
+
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+  });
 }
 
-export function setStorage(adapter: StorageAdapter): void {
-  storage = adapter;
+function getBucket(): string {
+  const bucket = process.env.R2_BUCKET;
+  if (!bucket) throw new StorageError("R2_BUCKET not configured");
+  return bucket;
+}
+
+export async function uploadObject(
+  key: string,
+  buffer: Buffer,
+  contentType: string
+): Promise<{ key: string; sizeBytes: number }> {
+  try {
+    const client = getClient();
+    const bucket = getBucket();
+    await client.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+      })
+    );
+    return { key, sizeBytes: buffer.length };
+  } catch (err) {
+    if (err instanceof StorageError) throw err;
+    throw new StorageError(`Failed to upload ${key}`, err);
+  }
+}
+
+export async function getSignedReadUrl(
+  key: string,
+  ttlSeconds = 3600
+): Promise<string> {
+  try {
+    const client = getClient();
+    const bucket = getBucket();
+    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
+    return await getSignedUrl(client, command, { expiresIn: ttlSeconds });
+  } catch (err) {
+    if (err instanceof StorageError) throw err;
+    throw new StorageError(`Failed to get signed URL for ${key}`, err);
+  }
+}
+
+export async function deleteObject(key: string): Promise<void> {
+  try {
+    const client = getClient();
+    const bucket = getBucket();
+    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+  } catch (err) {
+    if (err instanceof StorageError) throw err;
+    throw new StorageError(`Failed to delete ${key}`, err);
+  }
 }
