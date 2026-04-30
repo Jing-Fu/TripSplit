@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    name: Quality Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npm run db:generate
+        env:
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          DATABASE_DIRECT_URL: "postgresql://test:test@localhost:5432/test"
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type Check
+        run: npm run typecheck
+
+      - name: Unit Tests
+        run: npm test
+        env:
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          DATABASE_DIRECT_URL: "postgresql://test:test@localhost:5432/test"
+          SESSION_SECRET: "test-session-secret-for-ci-at-least-32-chars"
+          LINE_CHANNEL_SECRET: "test-channel-secret"
+          LIFF_CHANNEL_ID: "test-liff-channel-id"
+          APP_URL: "http://localhost:3000"
+
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: "postgresql://test:test@localhost:5432/test"
+          DATABASE_DIRECT_URL: "postgresql://test:test@localhost:5432/test"
+          SESSION_SECRET: "test-session-secret-for-ci-at-least-32-chars"
+          LINE_CHANNEL_ID: "test-channel-id"
+          LINE_CHANNEL_SECRET: "test-channel-secret"
+          LINE_CHANNEL_ACCESS_TOKEN: "test-access-token"
+          LIFF_ID: "test-liff-id"
+          LIFF_CHANNEL_ID: "test-liff-channel-id"
+          NEXT_PUBLIC_LIFF_ID: "test-liff-id"
+          LINE_LOGIN_CHANNEL_ID: "test-login-channel-id"
+          LINE_LOGIN_CHANNEL_SECRET: "test-login-channel-secret"
+          LINE_LOGIN_REDIRECT_URI: "http://localhost:3000/api/auth/line/oauth/callback"
+          R2_ACCOUNT_ID: "test-account-id"
+          R2_ACCESS_KEY_ID: "test-access-key"
+          R2_SECRET_ACCESS_KEY: "test-secret-key"
+          R2_BUCKET: "test-bucket"
+          R2_PUBLIC_BASE_URL: "https://test.r2.cloudflarestorage.com"
+          CRON_SECRET: "test-cron-secret"
+          APP_URL: "http://localhost:3000"
+          NEXT_PUBLIC_APP_URL: "http://localhost:3000"
