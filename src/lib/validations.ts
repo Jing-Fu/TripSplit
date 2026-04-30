@@ -131,9 +131,6 @@ export const importTripSchema = z.object({
     .optional(),
 });
 
-export const googleLoginSchema = z.object({
-  credential: z.string().min(1, "Google 登入憑證遺失，請重新嘗試"),
-});
 
 export function formatZodErrors(error: z.ZodError): string {
   return error.issues.map((e) => e.message).join("、");
