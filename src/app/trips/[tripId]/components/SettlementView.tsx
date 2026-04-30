@@ -31,6 +31,9 @@ type SettlementViewProps = {
   canExportToNotion: boolean;
   exportingToNotion: boolean;
   onExportToNotion: () => void;
+  canCompleteSettlement: boolean;
+  completingSettlement: boolean;
+  onCompleteSettlement: () => void;
 };
 
 export function SettlementView({
@@ -56,6 +59,9 @@ export function SettlementView({
   canExportToNotion,
   exportingToNotion,
   onExportToNotion,
+  canCompleteSettlement,
+  completingSettlement,
+  onCompleteSettlement,
 }: SettlementViewProps) {
   const { t } = useLocale();
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
@@ -80,6 +86,15 @@ export function SettlementView({
             <p className="mt-1 text-xs text-gray-400">{t("settlement.pendingDescription")}</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {canCompleteSettlement && settlements.length > 0 && (
+              <button
+                onClick={onCompleteSettlement}
+                disabled={completingSettlement}
+                className="rounded-xl bg-primary-500 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-primary-600 disabled:bg-primary-300 sm:text-sm"
+              >
+                {completingSettlement ? "推播中..." : "結算完成並推播"}
+              </button>
+            )}
             <button
               onClick={onExport}
               className="rounded-xl border border-primary-200 px-3 py-2 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 sm:text-sm"

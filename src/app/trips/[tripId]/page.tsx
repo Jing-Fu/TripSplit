@@ -58,6 +58,7 @@ export default function TripDetailPage() {
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
   const [backingUp, setBackingUp] = useState(false);
   const [exportingToNotion, setExportingToNotion] = useState(false);
+  const [completingSettlement, setCompletingSettlement] = useState(false);
   const [filters, setFilters] = useState<ExpenseFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [activities, setActivities] = useState<ActivityLog[]>([]);
@@ -514,6 +515,34 @@ export default function TripDetailPage() {
     setExportingToNotion(false);
   };
 
+  const completeSettlement = async () => {
+    if (!trip?.permissions.isOwner || completingSettlement) return;
+
+    const confirmed = window.confirm("確認結算完成並推播給尚未付款的成員嗎？每位成員在這趟旅程只會收到一次摘要推播。");
+    if (!confirmed) return;
+
+    setCompletingSettlement(true);
+    const res = await safeFetch(`/api/trips/${tripId}/settlement-reminder`, { method: "POST" });
+
+    if (res.status === 0) {
+      showError(t("errors.networkFailed"));
+      setCompletingSettlement(false);
+      return;
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: "結算推播失敗" }));
+      showError(data.error || "結算推播失敗");
+      setCompletingSettlement(false);
+      return;
+    }
+
+    const data = await res.json().catch(() => ({ attempted: 0, sent: 0, failed: 0 }));
+    alert(`結算推播完成：已嘗試 ${data.attempted ?? 0} 人，成功 ${data.sent ?? 0} 人，失敗 ${data.failed ?? 0} 人`);
+    setCompletingSettlement(false);
+    fetchTrip();
+  };
+
   const exportJSON = () => {
     if (!trip) return;
     const data = buildClientExportJSON(trip);
@@ -669,6 +698,9 @@ export default function TripDetailPage() {
                 canExportToNotion={trip.permissions.isOwner}
                 exportingToNotion={exportingToNotion}
                 onExportToNotion={exportToNotion}
+                canCompleteSettlement={trip.permissions.isOwner}
+                completingSettlement={completingSettlement}
+                onCompleteSettlement={completeSettlement}
               />
               {trip.permissions.isOwner && <BackupCard backingUp={backingUp} onTriggerBackup={triggerBackup} />}
             </>
