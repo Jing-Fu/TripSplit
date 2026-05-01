@@ -30,6 +30,7 @@ type AddExpenseFormProps = {
   onAddCustomCategory: () => void;
   onDeleteCustomCategory: (id: string) => void;
   isOwner: boolean;
+  editingExpenseId?: string | null;
 };
 
 export function AddExpenseForm({
@@ -57,10 +58,33 @@ export function AddExpenseForm({
   onAddCustomCategory,
   onDeleteCustomCategory,
   isOwner,
+  editingExpenseId,
 }: AddExpenseFormProps) {
   const { t } = useLocale();
   const [uploading, setUploading] = useState(false);
   const [rateLoading, setRateLoading] = useState(false);
+
+  const removeReceipt = async () => {
+    const key = form.receiptKey;
+    setForm((prev) => ({ ...prev, receiptKey: "", receiptUrl: "" }));
+
+    if (!key) return;
+
+    if (editingExpenseId) return;
+
+    const res = await safeFetch(`/api/upload/object?key=${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
+
+    if (res.status === 0) {
+      onError(t("expense.receiptUploadNetworkFailed"));
+      return;
+    }
+
+    if (!res.ok) {
+      onError(t("expense.receiptUploadFailed"));
+    }
+  };
 
   const fetchExchangeRate = async (from: string, to: string) => {
     if (from === to) {
@@ -107,7 +131,7 @@ export function AddExpenseForm({
       }
       if (res.ok) {
         const data = await res.json();
-        setForm((prev) => ({ ...prev, receiptUrl: data.url }));
+        setForm((prev) => ({ ...prev, receiptKey: data.key, receiptUrl: data.url }));
       } else {
         onError(t("expense.receiptUploadFailed"));
       }
@@ -413,7 +437,7 @@ export function AddExpenseForm({
             <div className="absolute right-2 top-2 flex gap-1">
               <button
                 type="button"
-                onClick={() => setForm((prev) => ({ ...prev, receiptUrl: "" }))}
+                onClick={removeReceipt}
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-black/50 text-sm text-white hover:bg-black/70"
               >
                 ✕

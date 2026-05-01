@@ -56,7 +56,7 @@
 
 - 新增、編輯、刪除費用
 - 記錄金額、幣別、匯率、日期、說明、備註、付款人
-- 支援收據圖片上傳（儲存於 Cloudflare R2）
+- 支援收據圖片上傳（儲存於 Supabase Storage）
 - 支援以下分帳方式：
   - 平均分攤
   - 按比例分攤
@@ -79,7 +79,7 @@
 
 - 可上傳圖片格式收據
 - 檔案大小限制為 10MB
-- 使用 Cloudflare R2 雲端物件儲存
+- 使用 Supabase Storage 雲端物件儲存
 - 上傳後可在費用項目中查看收據
 
 ### 7. 自動結算與付款紀錄
@@ -115,7 +115,7 @@
 - 匯出費用清單 `.csv`
 - 匯出結算 PDF
 - 匯出結算圖片
-- 旅程擁有者可手動觸發備份，備份檔儲存於 Cloudflare R2
+- 旅程擁有者可手動觸發備份，備份檔儲存於 Supabase Storage
 - 可從 JSON 備份匯入並建立「已還原」的新旅程
 
 ### 11. 統計與總結
@@ -166,7 +166,7 @@
 - Next.js Route Handlers
 - Prisma ORM
 - Supabase Postgres (PostgreSQL)
-- Cloudflare R2 (物件儲存)
+- Supabase Storage (物件儲存)
 - Zod 驗證
 
 ### 其他能力
@@ -224,6 +224,9 @@ NEXT_PUBLIC_APP_URL=https://your-app.vercel.app
 DATABASE_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
 # 用於 Migration 的直接連線
 DATABASE_DIRECT_URL=postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres
+# Supabase Project URL / secret key（Storage server-side 使用）
+SUPABASE_URL=https://[ref].supabase.co
+SUPABASE_SECRET_KEY=your-supabase-secret-key
 
 # LINE Messaging API
 LINE_CHANNEL_SECRET=your-channel-secret
@@ -238,12 +241,9 @@ LINE_LOGIN_REDIRECT_URI=https://your-app.vercel.app/api/auth/line/oauth/callback
 LIFF_CHANNEL_ID=your-liff-channel-id
 NEXT_PUBLIC_LIFF_ID=your-liff-id
 
-# Cloudflare R2
-R2_ACCOUNT_ID=your-account-id
-R2_ACCESS_KEY_ID=your-access-key-id
-R2_SECRET_ACCESS_KEY=your-secret-access-key
-R2_BUCKET=tripsplit-uploads
-R2_PUBLIC_URL=https://pub-xxx.r2.dev
+# Supabase Storage
+STORAGE_PROVIDER=supabase
+STORAGE_BUCKET=trip-files
 
 # Cron
 CRON_SECRET=your-random-secret
@@ -307,7 +307,7 @@ CRON_SECRET=your-random-secret
 - `/api/trips/import`：匯入備份
 - `/api/trips/[tripId]/*`：旅程內容、成員、費用、付款、類別、備份、活動紀錄
 - `/api/notifications/*`：通知與通知偏好
-- `/api/upload`：收據上傳至 R2
+- `/api/upload`：收據上傳至 Supabase Storage
 - `/api/exchange-rate`：匯率查詢
 
 ## 部署說明
@@ -324,7 +324,7 @@ CRON_SECRET=your-random-secret
 
 - 認證目前全面切換為 LINE Login，不再支援傳統 Email 登入。
 - 資料庫使用 Supabase (Postgres)；部署前請確保已完成 Schema Migration。
-- 收據檔案與備份均儲存於 Cloudflare R2，不佔用伺服器本機空間。
+- 收據檔案與備份均儲存於 Supabase Storage，不佔用伺服器本機空間。
 - 專案已整合 Vercel Cron，定時任務需在 Vercel 環境中方可完整運作。
 
 ## 專案腳本

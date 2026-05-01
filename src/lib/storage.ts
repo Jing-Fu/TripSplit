@@ -1,10 +1,4 @@
-import {
-  S3Client,
-  PutObjectCommand,
-  DeleteObjectCommand,
-  GetObjectCommand,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export class StorageError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
@@ -13,25 +7,55 @@ export class StorageError extends Error {
   }
 }
 
-function getClient(): S3Client {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+export function getReceiptStoragePrefix(userId: string): string {
+  return `uploads/${userId}/`;
+}
 
-  if (!accountId || !accessKeyId || !secretAccessKey) {
-    throw new StorageError("R2 credentials not configured");
+export function isReceiptStorageKeyForUser(key: string, userId: string): boolean {
+  return key.startsWith(getReceiptStoragePrefix(userId));
+}
+
+export function isReceiptStorageKey(key: string): boolean {
+  return /^uploads\/[^/]+\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[A-Za-z0-9]+$/.test(
+    key
+  );
+}
+
+type StorageProvider = "supabase";
+
+let supabaseStorageClient: SupabaseClient | null = null;
+
+function getStorageProvider(): StorageProvider {
+  const provider = process.env.STORAGE_PROVIDER ?? "supabase";
+
+  if (provider !== "supabase") {
+    throw new StorageError(`Unsupported storage provider: ${provider}`);
   }
 
-  return new S3Client({
-    region: "auto",
-    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-    credentials: { accessKeyId, secretAccessKey },
+  return provider;
+}
+
+function getSupabaseClient(): SupabaseClient {
+  if (supabaseStorageClient) return supabaseStorageClient;
+
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey =
+    process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new StorageError("Supabase Storage credentials not configured");
+  }
+
+  supabaseStorageClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  return supabaseStorageClient;
 }
 
 function getBucket(): string {
-  const bucket = process.env.R2_BUCKET;
-  if (!bucket) throw new StorageError("R2_BUCKET not configured");
+  const bucket = process.env.STORAGE_BUCKET ?? process.env.SUPABASE_STORAGE_BUCKET;
+  if (!bucket) throw new StorageError("STORAGE_BUCKET not configured");
   return bucket;
 }
 
@@ -41,16 +65,16 @@ export async function uploadObject(
   contentType: string
 ): Promise<{ key: string; sizeBytes: number }> {
   try {
-    const client = getClient();
+    getStorageProvider();
+    const client = getSupabaseClient();
     const bucket = getBucket();
-    await client.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
-      })
-    );
+    const { error } = await client.storage.from(bucket).upload(key, buffer, {
+      contentType,
+      upsert: false,
+    });
+
+    if (error) throw error;
+
     return { key, sizeBytes: buffer.length };
   } catch (err) {
     if (err instanceof StorageError) throw err;
@@ -63,10 +87,16 @@ export async function getSignedReadUrl(
   ttlSeconds = 3600
 ): Promise<string> {
   try {
-    const client = getClient();
+    getStorageProvider();
+    const client = getSupabaseClient();
     const bucket = getBucket();
-    const command = new GetObjectCommand({ Bucket: bucket, Key: key });
-    return await getSignedUrl(client, command, { expiresIn: ttlSeconds });
+    const { data, error } = await client.storage
+      .from(bucket)
+      .createSignedUrl(key, ttlSeconds);
+
+    if (error) throw error;
+
+    return data.signedUrl;
   } catch (err) {
     if (err instanceof StorageError) throw err;
     throw new StorageError(`Failed to get signed URL for ${key}`, err);
@@ -75,9 +105,12 @@ export async function getSignedReadUrl(
 
 export async function deleteObject(key: string): Promise<void> {
   try {
-    const client = getClient();
+    getStorageProvider();
+    const client = getSupabaseClient();
     const bucket = getBucket();
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+    const { error } = await client.storage.from(bucket).remove([key]);
+
+    if (error) throw error;
   } catch (err) {
     if (err instanceof StorageError) throw err;
     throw new StorageError(`Failed to delete ${key}`, err);

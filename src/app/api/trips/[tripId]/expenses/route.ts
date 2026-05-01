@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
 import { recordSideEffects } from "@/lib/side-effects";
+import { isReceiptStorageKeyForUser } from "@/lib/storage";
 import { createExpenseSchema, formatZodErrors } from "@/lib/validations";
 
 export async function POST(
@@ -33,7 +34,7 @@ export async function POST(
     paidById,
     splitType,
     splits,
-    receiptUrl,
+    receiptKey,
     settlementMode,
     settlementNote,
   } = parsed.data;
@@ -75,6 +76,10 @@ export async function POST(
     return NextResponse.json({ error: "分攤對象必須是旅程成員" }, { status: 400 });
   }
 
+  if (receiptKey && !isReceiptStorageKeyForUser(receiptKey, user.id)) {
+    return NextResponse.json({ error: "收據檔案不屬於目前使用者" }, { status: 400 });
+  }
+
   const expense = await prisma.expense.create({
     data: {
       amount,
@@ -87,7 +92,7 @@ export async function POST(
       paidById,
       tripId: params.tripId,
       splitType: splitType || "equal",
-      receiptUrl: receiptUrl || null,
+      receiptKey: receiptKey || null,
       settlementMode: settlementMode || "normal",
       settlementNote: settlementNote || null,
       createdById: user.id,

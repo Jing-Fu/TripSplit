@@ -1,71 +1,103 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@aws-sdk/client-s3", () => {
-  const mockSend = vi.fn();
-  return {
-    S3Client: vi.fn(() => ({ send: mockSend })),
-    PutObjectCommand: vi.fn(),
-    DeleteObjectCommand: vi.fn(),
-    GetObjectCommand: vi.fn(),
-    __mockSend: mockSend,
-  };
-});
-
-vi.mock("@aws-sdk/s3-request-presigner", () => ({
-  getSignedUrl: vi.fn(),
+const uploadMock = vi.fn();
+const createSignedUrlMock = vi.fn();
+const removeMock = vi.fn();
+const fromMock = vi.fn(() => ({
+  upload: uploadMock,
+  createSignedUrl: createSignedUrlMock,
+  remove: removeMock,
 }));
 
-import { uploadObject, getSignedReadUrl, deleteObject, StorageError } from "@/lib/storage";
-import * as s3 from "@aws-sdk/client-s3";
-import * as presigner from "@aws-sdk/s3-request-presigner";
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => ({
+    storage: { from: fromMock },
+  })),
+}));
+
+import {
+  uploadObject,
+  getSignedReadUrl,
+  deleteObject,
+  getReceiptStoragePrefix,
+  isReceiptStorageKey,
+  isReceiptStorageKeyForUser,
+  StorageError,
+} from "@/lib/storage";
 
 const mockEnv = {
-  R2_ACCOUNT_ID: "test-account",
-  R2_ACCESS_KEY_ID: "test-key",
-  R2_SECRET_ACCESS_KEY: "test-secret",
-  R2_BUCKET: "test-bucket",
+  STORAGE_PROVIDER: "supabase",
+  SUPABASE_URL: "https://test.supabase.co",
+  SUPABASE_SECRET_KEY: "test-secret-key",
+  STORAGE_BUCKET: "test-bucket",
 };
 
 describe("storage", () => {
   beforeEach(() => {
     Object.assign(process.env, mockEnv);
     vi.clearAllMocks();
-    const mockClient = { send: vi.fn() };
-    vi.mocked(s3.S3Client).mockImplementation(() => mockClient as any);
-    (s3 as any).__mockClient = mockClient;
   });
 
   it("uploadObject returns key and sizeBytes on success", async () => {
-    const mockClient = (s3 as any).__mockClient;
-    mockClient.send.mockResolvedValueOnce({});
+    uploadMock.mockResolvedValueOnce({ data: { path: "receipts/test.jpg" }, error: null });
 
     const buf = Buffer.from("hello");
     const result = await uploadObject("receipts/test.jpg", buf, "image/jpeg");
 
     expect(result.key).toBe("receipts/test.jpg");
     expect(result.sizeBytes).toBe(5);
+    expect(fromMock).toHaveBeenCalledWith("test-bucket");
+    expect(uploadMock).toHaveBeenCalledWith("receipts/test.jpg", buf, {
+      contentType: "image/jpeg",
+      upsert: false,
+    });
   });
 
   it("getSignedReadUrl returns a URL string", async () => {
-    vi.mocked(presigner.getSignedUrl).mockResolvedValueOnce("https://r2.example.com/signed-url");
+    createSignedUrlMock.mockResolvedValueOnce({
+      data: { signedUrl: "https://storage.example.com/signed-url" },
+      error: null,
+    });
 
     const url = await getSignedReadUrl("receipts/test.jpg");
 
-    expect(url).toBe("https://r2.example.com/signed-url");
+    expect(url).toBe("https://storage.example.com/signed-url");
+    expect(createSignedUrlMock).toHaveBeenCalledWith("receipts/test.jpg", 3600);
   });
 
   it("deleteObject resolves without error", async () => {
-    const mockClient = (s3 as any).__mockClient;
-    mockClient.send.mockResolvedValueOnce({});
+    removeMock.mockResolvedValueOnce({ data: null, error: null });
 
     await expect(deleteObject("receipts/test.jpg")).resolves.toBeUndefined();
+    expect(removeMock).toHaveBeenCalledWith(["receipts/test.jpg"]);
   });
 
   it("uploadObject throws StorageError on failure", async () => {
-    const mockClient = (s3 as any).__mockClient;
-    mockClient.send.mockRejectedValueOnce(new Error("S3 error"));
+    uploadMock.mockResolvedValueOnce({ data: null, error: new Error("Storage error") });
 
     const buf = Buffer.from("hello");
     await expect(uploadObject("receipts/test.jpg", buf, "image/jpeg")).rejects.toBeInstanceOf(StorageError);
+  });
+
+  it("recognizes only generated receipt storage keys", () => {
+    const key = "uploads/user-1/550e8400-e29b-41d4-a716-446655440000.jpg";
+
+    expect(getReceiptStoragePrefix("user-1")).toBe("uploads/user-1/");
+    expect(isReceiptStorageKey(key)).toBe(true);
+    expect(isReceiptStorageKeyForUser(key, "user-1")).toBe(true);
+    expect(isReceiptStorageKeyForUser(key, "user-2")).toBe(false);
+    expect(isReceiptStorageKey("backups/trip-1.json")).toBe(false);
+    expect(isReceiptStorageKey("uploads/user-1/not-a-uuid.jpg")).toBe(false);
+  });
+
+  it("falls back to legacy service role key env name", async () => {
+    delete process.env.SUPABASE_SECRET_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "legacy-service-role-key";
+    uploadMock.mockResolvedValueOnce({ data: { path: "receipts/test.jpg" }, error: null });
+
+    await expect(uploadObject("receipts/test.jpg", Buffer.from("hello"), "image/jpeg")).resolves.toMatchObject({
+      key: "receipts/test.jpg",
+      sizeBytes: 5,
+    });
   });
 });

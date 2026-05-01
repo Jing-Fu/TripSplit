@@ -95,6 +95,7 @@ export function createDefaultExpenseForm(currency = "TWD", paidById = ""): Expen
     date: formatDateForInput(new Date()),
     paidById,
     splitType: "equal",
+    receiptKey: "",
     receiptUrl: "",
     exchangeRate: "1",
   };

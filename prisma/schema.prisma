@@ -117,7 +117,7 @@ model Expense {
   settlementMode String   @default("normal")
   settlementNote String?
   date        DateTime
-  receiptUrl  String?
+  receiptKey  String?
   splitType   String   @default("equal")
   paidById    String
   tripId      String

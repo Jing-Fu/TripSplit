@@ -61,36 +61,15 @@ LINE_CHANNEL_SECRET=your-line-channel-secret-here
 LINE_CHANNEL_ACCESS_TOKEN=your-line-channel-access-token-here
 ```
 
-## Cloudflare R2
-
-1. 建立 R2 bucket 並確認對外存取策略。
-2. 建立可用於應用程式的 access key。
-3. 參考文件：
-   - Cloudflare R2: <https://developers.cloudflare.com/r2/get-started/>
-
-```env
-# Cloudflare account id
-R2_ACCOUNT_ID=your-r2-account-id-here
-
-# R2 access key id
-R2_ACCESS_KEY_ID=your-r2-access-key-id-here
-
-# R2 secret access key
-R2_SECRET_ACCESS_KEY=your-r2-secret-access-key-here
-
-# R2 bucket name
-R2_BUCKET=your-r2-bucket-name-here
-
-# R2 public base URL。程式目前以 signed URL 存取 R2；此值保留作公開 base URL 設定。
-R2_PUBLIC_BASE_URL=your-r2-public-base-url-here
-```
-
 ## Supabase
 
 1. 建立 Supabase project，並完成 PostgreSQL 資料庫準備。
 2. 取得 Prisma 需要的連線字串，分成 pooled 與 direct 連線。
-3. 參考文件：
+3. 在 Storage 建立 private bucket，例如 `trip-files`，用於收據圖片與備份檔。
+4. 取得 Project URL 與 service role key。service role key 只能放在 Vercel server-side 環境變數，不能加 `NEXT_PUBLIC_`。
+5. 參考文件：
    - Supabase + Prisma: <https://supabase.com/partners/integrations/prisma>
+   - Supabase Storage: <https://supabase.com/docs/guides/storage>
 
 ```env
 # Pooled database connection string for Prisma runtime usage
@@ -98,6 +77,16 @@ DATABASE_URL=your-database-url-here
 
 # Direct database connection string for migrations and direct access
 DATABASE_DIRECT_URL=your-database-direct-url-here
+
+# Supabase project URL for Storage SDK
+SUPABASE_URL=https://your-project-ref.supabase.co
+
+# Server-only secret key for Storage operations
+SUPABASE_SECRET_KEY=your-supabase-secret-key-here
+
+# Object storage settings
+STORAGE_PROVIDER=supabase
+STORAGE_BUCKET=trip-files
 ```
 
 ## Vercel

@@ -12,7 +12,7 @@ export const createExpenseSchema = z.object({
   date: z.string().min(1, "請選擇日期"),
   paidById: z.string().min(1, "請選擇付款人"),
   splitType: z.enum(["equal", "percentage", "exact", "payer_only"]).default("equal"),
-  receiptUrl: z.string().optional().nullable(),
+  receiptKey: z.string().optional().nullable(),
   splits: z.array(
     z.object({
       memberId: z.string().min(1),

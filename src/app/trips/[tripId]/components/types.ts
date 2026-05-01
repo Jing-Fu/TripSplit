@@ -23,6 +23,7 @@ export type Expense = SettlementExpense & {
   note: string | null;
   settlementMode: string;
   settlementNote: string | null;
+  receiptKey: string | null;
   receiptUrl: string | null;
   splitType: string;
   createdBy: User | null;
@@ -97,6 +98,7 @@ export type ExpenseFormState = {
   date: string;
   paidById: string;
   splitType: string;
+  receiptKey: string;
   receiptUrl: string;
   exchangeRate: string;
 };

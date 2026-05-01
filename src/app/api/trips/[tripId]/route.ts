@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
+import { getSignedReadUrl, isReceiptStorageKey } from "@/lib/storage";
 import { formatZodErrors, updateTripSchema } from "@/lib/validations";
 
 async function getTripForUser(tripId: string, userId: string) {
@@ -49,9 +50,18 @@ export async function GET(
   }
 
   const currentMember = trip.members.find((member) => member.userId === user.id) ?? null;
+  const expenses = await Promise.all(
+    trip.expenses.map(async (expense) => ({
+      ...expense,
+      receiptUrl: expense.receiptKey && isReceiptStorageKey(expense.receiptKey)
+        ? await getSignedReadUrl(expense.receiptKey).catch(() => null)
+        : null,
+    }))
+  );
 
   return NextResponse.json(serializePrisma({
     ...trip,
+    expenses,
     permissions: {
       isOwner: trip.ownerId === user.id,
       canManageMembers: trip.ownerId === user.id,

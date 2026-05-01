@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-import { uploadObject, getSignedReadUrl } from "@/lib/storage";
+import { requireUser } from "@/lib/auth";
+import { getReceiptStoragePrefix, uploadObject, getSignedReadUrl } from "@/lib/storage";
 
 export async function POST(request: Request) {
   try {
+    const { user, error } = await requireUser(request);
+    if (error || !user) return error;
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
@@ -24,7 +28,7 @@ export async function POST(request: Request) {
 
     const ext = file.name.split(".").pop() || "jpg";
     const filename = `${uuidv4()}.${ext}`;
-    const key = `uploads/${filename}`;
+    const key = `${getReceiptStoragePrefix(user.id)}${filename}`;
 
     await uploadObject(key, buffer, file.type);
     const url = await getSignedReadUrl(key);

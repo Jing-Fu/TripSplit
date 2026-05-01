@@ -13,10 +13,7 @@ export default function LoginPage() {
     }
   }, []);
 
-  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-  const lineLoginUrl = liffId
-    ? `https://liff.line.me/${liffId}`
-    : "#";
+  const lineLoginUrl = "/api/auth/line/oauth/start";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50 px-4 py-10">

@@ -53,18 +53,29 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
             return;
           }
 
-          const res = await fetch("/api/auth/line", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ idToken }),
+          const sessionRes = await fetch("/api/auth/session", {
+            cache: "no-store",
           });
+          const sessionData = await sessionRes.json();
 
-          if (!res.ok && res.status === 401) {
-            liff.login();
-            return;
+          if (!sessionData.user) {
+            const res = await fetch("/api/auth/line", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ idToken }),
+            });
+
+            if (!res.ok && res.status === 401) {
+              liff.login();
+              return;
+            }
+
+            if (!res.ok) {
+              throw new Error("LIFF session bootstrap failed");
+            }
+
+            router.refresh();
           }
-
-          router.refresh();
         } else {
           setMode("web");
         }

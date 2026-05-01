@@ -1,10 +1,10 @@
 # Phase 1 — TripSplit 完整部署教學
 
-> **適用對象**：第一次部署 TripSplit 的人，沒做過 LINE Developers / Cloudflare R2 / Supabase / Vercel 也沒關係。
+> **適用對象**：第一次部署 TripSplit 的人，沒做過 LINE Developers / Supabase / Vercel 也沒關係。
 > **預估時間**：第一次跑完約 90–120 分鐘（含等服務開通）。
 > **前置條件**：
+>
 > - 一個你會用的 LINE 個人帳號（用來登入 Console、收驗證）
-> - 一張可綁定的信用卡（Cloudflare R2 即使免費額度內也要綁卡）
 > - 一個 GitHub 帳號（你的程式碼已經 push 到 GitHub）
 
 ---
@@ -20,9 +20,8 @@
 │                                                              │
 │   使用者瀏覽器 ──────────────────► Vercel (Next.js 應用)      │
 │        │                              │                      │
-│        │                              ├─► Supabase (資料庫)  │
-│        │                              ├─► Cloudflare R2      │
-│        │                              │   (收據圖、備份)      │
+│        │                              ├─► Supabase           │
+│        │                              │   (資料庫、Storage)   │
 │        │                              └─► LINE Messaging API │
 │        │                                  (推播訊息)          │
 │        │                                                     │
@@ -31,14 +30,14 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
-| 階段 | 平台 | 你會拿到什麼 | 大約耗時 |
-|---|---|---|---|
-| **階段 A** | LINE Developers | Provider + 3 個 Channel | 30 分鐘 |
-| **階段 B** | Supabase | PostgreSQL 資料庫 + 連線字串 | 10 分鐘 |
-| **階段 C** | Cloudflare R2 | 物件儲存 bucket + API token | 15 分鐘 |
-| **階段 D** | Vercel | 線上正式網址 | 15 分鐘 |
-| **階段 E** | 回填設定 | 把所有網址回填回 LINE/Vercel | 15 分鐘 |
-| **階段 F** | 驗證 | 確認登入、推播、上傳都正常 | 15 分鐘 |
+| 階段       | 平台             | 你會拿到什麼                              | 大約耗時 |
+| ---------- | ---------------- | ----------------------------------------- | -------- |
+| **階段 A** | LINE Developers  | Provider + 3 個 Channel                   | 30 分鐘  |
+| **階段 B** | Supabase         | PostgreSQL 資料庫 + Storage bucket + 金鑰 | 15 分鐘  |
+| **階段 C** | Supabase Storage | 確認 bucket 與 server-side 金鑰           | 5 分鐘   |
+| **階段 D** | Vercel           | 線上正式網址                              | 15 分鐘  |
+| **階段 E** | 回填設定         | 把所有網址回填回 LINE/Vercel              | 15 分鐘  |
+| **階段 F** | 驗證             | 確認登入、推播、上傳都正常                | 15 分鐘  |
 
 > 💡 **小提醒**：階段 A 跟階段 B/C/D 是**獨立的**，可以平行進行。
 > 但階段 E（回填設定）一定要等所有東西都建好。
@@ -48,6 +47,7 @@
 # 階段 A：LINE Developers 設定
 
 > 你會在這個階段建立：
+>
 > - **1 個 Provider**
 > - **1 個 LINE Login Channel**（給外部瀏覽器登入用）
 > - **1 個 LIFF App**（掛在 LINE Login Channel 底下，給 LINE App 內部使用）
@@ -79,6 +79,7 @@
 3. 點 **Create**
 
 ✅ **完成檢查點**：你會進到 Provider 頁面，看到 3 個 tab：
+
 - **Channels**（目前是空的）
 - **Roles**
 - **Settings**
@@ -91,19 +92,19 @@
    （如果看不到，點右上角 **「Create a new channel」** → 選 **LINE Login**）
 2. 填寫表單：
 
-   | 欄位 | 填什麼 | 備註 |
-   |---|---|---|
-   | **Channel type** | `LINE Login` | 應該已預選 |
-   | **Provider** | 你剛建的 Provider | 已預選 |
-   | **Region to provide the service** | `Taiwan` | 一旦選定無法修改 |
-   | **Company or owner's country/region** | `Taiwan` | |
-   | **Channel icon** | 選填 | 可上傳 app logo |
-   | **Channel name** | `TripSplit Login` | ⚠️ **不能含 "LINE" 字樣** |
-   | **Channel description** | `旅遊分帳應用的 LINE 登入服務` | |
-   | **App types** | ✅ **勾 Web app**（必勾） | 一定要勾 |
-   | **Email address** | 你的 Email | |
-   | **Privacy policy URL** | 留白 | 之後上線再補 |
-   | **Terms of use URL** | 留白 | |
+   | 欄位                                  | 填什麼                         | 備註                      |
+   | ------------------------------------- | ------------------------------ | ------------------------- |
+   | **Channel type**                      | `LINE Login`                   | 應該已預選                |
+   | **Provider**                          | 你剛建的 Provider              | 已預選                    |
+   | **Region to provide the service**     | `Taiwan`                       | 一旦選定無法修改          |
+   | **Company or owner's country/region** | `Taiwan`                       |                           |
+   | **Channel icon**                      | 選填                           | 可上傳 app logo           |
+   | **Channel name**                      | `TripSplit Login`              | ⚠️ **不能含 "LINE" 字樣** |
+   | **Channel description**               | `旅遊分帳應用的 LINE 登入服務` |                           |
+   | **App types**                         | ✅ **勾 Web app**（必勾）      | 一定要勾                  |
+   | **Email address**                     | 你的 Email                     |                           |
+   | **Privacy policy URL**                | 留白                           | 之後上線再補              |
+   | **Terms of use URL**                  | 留白                           |                           |
 
 3. 勾選 **LINE Developers Agreement** → **Create**
 
@@ -130,19 +131,20 @@ LINE_LOGIN_CHANNEL_SECRET = (Channel secret 那一欄，按 Issue 才會出現)
 2. 點 **「Add」** 按鈕
 3. 填寫表單：
 
-   | 欄位 | 填什麼 |
-   |---|---|
-   | **LIFF app name** | `TripSplit` |
-   | **Size** | ✅ **Full**（全螢幕） |
-   | **Endpoint URL** | `https://example.vercel.app`（先暫填，等階段 D 拿到正式網址再回來改） |
-   | **Scopes** | ✅ 勾 **`profile`** + ✅ 勾 **`openid`** |
-   | **Add friend option** | `Off` |
-   | **Scan QR** | Off |
-   | **Module mode** | Off |
+   | 欄位                  | 填什麼                                                                |
+   | --------------------- | --------------------------------------------------------------------- |
+   | **LIFF app name**     | `TripSplit`                                                           |
+   | **Size**              | ✅ **Full**（全螢幕）                                                 |
+   | **Endpoint URL**      | `https://example.vercel.app`（先暫填，等階段 D 拿到正式網址再回來改） |
+   | **Scopes**            | ✅ 勾 **`profile`** + ✅ 勾 **`openid`**                              |
+   | **Add friend option** | `Off`                                                                 |
+   | **Scan QR**           | Off                                                                   |
+   | **Module mode**       | Off                                                                   |
 
 4. 點 **Add**
 
 ✅ **完成檢查點**：LIFF tab 列表會出現一筆新項目，點進去可以看到：
+
 - **LIFF ID**（格式：`1234567890-AbcdEfgh`）
 - **LIFF URL**（格式：`https://liff.line.me/1234567890-AbcdEfgh`）
 
@@ -175,14 +177,14 @@ LIFF_CHANNEL_ID      = (用 LINE_LOGIN_CHANNEL_ID 同一個值，因為 LIFF 掛
 1. 註冊完會自動跳到 entry form：https://entry.line.biz/form/entry/unverified
 2. 填寫表單：
 
-   | 欄位 | 填什麼 |
-   |---|---|
-   | **Account name** | `TripSplit`（會顯示給用戶看） |
-   | **Email** | 你的 Email |
-   | **Country/Region** | `Taiwan` |
-   | **Company name** | 個人填自己名字 |
-   | **Business category** | `IT/通訊 → 軟體` |
-   | **Business sub-category** | 隨便選一個合理的 |
+   | 欄位                      | 填什麼                        |
+   | ------------------------- | ----------------------------- |
+   | **Account name**          | `TripSplit`（會顯示給用戶看） |
+   | **Email**                 | 你的 Email                    |
+   | **Country/Region**        | `Taiwan`                      |
+   | **Company name**          | 個人填自己名字                |
+   | **Business category**     | `IT/通訊 → 軟體`              |
+   | **Business sub-category** | 隨便選一個合理的              |
 
 3. 送出 → 會自動建立 OA
 
@@ -241,11 +243,14 @@ LINE_CHANNEL_ACCESS_TOKEN
 
 ---
 
-# 階段 B：Supabase 資料庫
+# 階段 B：Supabase 資料庫與 Storage
 
 > 你會在這個階段建立：
+>
 > - **1 個 Supabase Project**（含 PostgreSQL 資料庫）
 > - **2 種連線字串**（pooled + direct）
+> - **1 個 private Storage bucket**（存收據圖、備份檔）
+> - **1 組 server-side Storage 金鑰**
 
 ---
 
@@ -256,13 +261,13 @@ LINE_CHANNEL_ACCESS_TOKEN
 3. 進到 Dashboard，點 **「New project」**
 4. 填寫：
 
-   | 欄位 | 填什麼 |
-   |---|---|
-   | **Organization** | 選預設或建一個新的 |
-   | **Project name** | `tripsplit` |
+   | 欄位                  | 填什麼                                                   |
+   | --------------------- | -------------------------------------------------------- |
+   | **Organization**      | 選預設或建一個新的                                       |
+   | **Project name**      | `tripsplit`                                              |
    | **Database Password** | ⚠️ **點「Generate a password」自動生成，並立刻複製存好** |
-   | **Region** | ✅ **`Southeast Asia (Singapore)`** ← 為了和 Vercel 同區 |
-   | **Pricing Plan** | `Free` |
+   | **Region**            | ✅ **`Southeast Asia (Singapore)`** ← 為了和 Vercel 同區 |
+   | **Pricing Plan**      | `Free`                                                   |
 
 5. 點 **「Create new project」**，等待 1–2 分鐘初始化
 
@@ -301,6 +306,7 @@ LINE_CHANNEL_ACCESS_TOKEN
    → 這就是 `DATABASE_DIRECT_URL`
 
 > 💡 **為什麼要兩個？**
+>
 > - `DATABASE_URL`（6543 + pgbouncer）：給應用程式跑 query 用，serverless 友善。
 > - `DATABASE_DIRECT_URL`（5432）：給 `prisma migrate` 用，因為 pgbouncer 不支援 DDL transaction。
 
@@ -313,103 +319,48 @@ DATABASE_DIRECT_URL  = postgresql://...:5432/postgres
 
 ---
 
-# 階段 C：Cloudflare R2 物件儲存
+# 階段 C：Supabase Storage 物件儲存
 
 > 你會在這個階段建立：
-> - **1 個 R2 Bucket**（存收據圖、備份檔）
-> - **1 組 API Token**（Access Key ID + Secret Access Key）
+>
+> - **1 個 private bucket**（存收據圖、備份檔）
+> - **Project URL** 與 **secret key**（只給 Vercel server-side 使用）
 
-> ⚠️ **注意**：R2 即使在免費額度（10GB 儲存、每月 100 萬次讀取）內，也要先在 Cloudflare 綁定信用卡才能啟用。
-
----
-
-## C-1. 註冊 Cloudflare 帳號 + 啟用 R2
-
-1. 前往 👉 https://dash.cloudflare.com/sign-up 註冊
-2. 完成 Email 驗證
-3. 左側選單點 **「R2 Object Storage」**
-4. 第一次會要求 **加入付款方式**：
-   - 點 **「Purchase R2」** 或 **「Subscribe to R2」**
-   - 輸入信用卡資料
-   - 選 **Free Tier**
-5. 完成後就可以用 R2 了
+> ⚠️ **注意**：`SUPABASE_SECRET_KEY` 權限很高，只能放在 Vercel Environment Variables，不能加 `NEXT_PUBLIC_`，也不能放到前端程式。
 
 ---
 
-## C-2. 建立 Bucket
+## C-1. 建立 Storage bucket
 
-1. 進入 R2 後，點 **「Create bucket」**
-2. 填寫：
-
-   | 欄位 | 填什麼 |
-   |---|---|
-   | **Bucket name** | `tripsplit-prod` |
-   | **Location** | `Asia-Pacific (APAC)`（自動選最近區） |
-   | **Default Storage Class** | `Standard` |
-
-3. 點 **「Create bucket」**
-
-✅ **完成檢查點**：bucket 列表會出現 `tripsplit-prod`。
-
-> ✅ Bucket **保持 private**（預設就是 private），TripSplit 用 signed URL 存取。
-> 不需要開啟 Public access。
-
----
-
-## C-3. 取得 Account ID
-
-1. 在 R2 主頁右側，找到 **「Account details」** 區塊
-2. 複製 **Account ID**（一長串 hex 字串）
-
-```
-R2_ACCOUNT_ID = (你的 Account ID)
-```
-
----
-
-## C-4. 建立 API Token
-
-1. R2 主頁 → **Account details** → **API Tokens** → 點 **「Manage」**
-2. 點 **「Create Account API token」**
+1. 在 Supabase Dashboard 左側點 **Storage**
+2. 點 **「New bucket」**
 3. 填寫：
 
-   | 欄位 | 填什麼 |
-   |---|---|
-   | **Token name** | `tripsplit-prod-rw` |
-   | **Permissions** | ✅ **`Object Read and Write`** |
-   | **Specify buckets** | ✅ 選 **「Apply to specific buckets only」** → 勾 `tripsplit-prod` |
-   | **TTL** | `Forever`（或留空） |
+   | 欄位              | 填什麼                |
+   | ----------------- | --------------------- |
+   | **Bucket name**   | `trip-files`          |
+   | **Public bucket** | ❌ 關閉，保持 private |
 
-4. 點 **「Create Account API Token」**
+4. 點 **「Create bucket」**
 
-5. ⚠️ **下一頁的 Secret Access Key 只會顯示一次**，立刻複製：
+---
 
-```
-R2_ACCESS_KEY_ID     = (Access Key ID)
-R2_SECRET_ACCESS_KEY = (Secret Access Key) ← 只顯示一次！
-```
+## C-2. 取得 Project URL 與 secret key
 
-6. 同一頁也會看到 **S3 endpoint**，格式：
+1. 到 Supabase Dashboard → **Project Settings** → **API Keys**
+2. 複製 **Project URL**
+3. 複製 **Secret key**
 
-```
-https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
-```
-
-→ 這就是 `R2_PUBLIC_BASE_URL` 的格式（也可以後綴加上 `/tripsplit-prod`）。
-
-```
-R2_BUCKET            = tripsplit-prod
-R2_PUBLIC_BASE_URL   = https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
-```
+> `anon public` / `publishable` key 不能取代 secret key，因為上傳、刪除與產生 private signed URL 都在 server-side 執行。
+> 若你看到的是舊版介面，也可以用 legacy `service_role` key；程式碼仍相容，但新設定建議統一改用 `SUPABASE_SECRET_KEY`。
 
 ✅ **階段 C 完成檢查點**：暫存記事本應該有：
 
 ```
-R2_ACCOUNT_ID
-R2_ACCESS_KEY_ID
-R2_SECRET_ACCESS_KEY
-R2_BUCKET = tripsplit-prod
-R2_PUBLIC_BASE_URL
+SUPABASE_URL
+SUPABASE_SECRET_KEY=""
+STORAGE_PROVIDER = supabase
+STORAGE_BUCKET   = trip-files
 ```
 
 ---
@@ -417,6 +368,7 @@ R2_PUBLIC_BASE_URL
 # 階段 D：Vercel 部署
 
 > 你會在這個階段：
+>
 > - 把 GitHub repo 連到 Vercel
 > - 設定環境變數
 > - 部署到 sin1（新加坡）區
@@ -445,13 +397,13 @@ R2_PUBLIC_BASE_URL
 
 進到設定頁，**先不要按 Deploy**，要先設定：
 
-| 欄位 | 設定 |
-|---|---|
-| **Framework Preset** | `Next.js`（自動偵測） |
-| **Root Directory** | `./`（預設） |
-| **Build Command** | `prisma generate && prisma migrate deploy && next build` |
-| **Output Directory** | 留空（預設） |
-| **Install Command** | `npm install` |
+| 欄位                 | 設定                                                     |
+| -------------------- | -------------------------------------------------------- |
+| **Framework Preset** | `Next.js`（自動偵測）                                    |
+| **Root Directory**   | `./`（預設）                                             |
+| **Build Command**    | `prisma generate && prisma migrate deploy && next build` |
+| **Output Directory** | 留空（預設）                                             |
+| **Install Command**  | `npm install`                                            |
 
 > 💡 **為什麼 Build Command 要加 `prisma migrate deploy`？**
 > 這樣每次部署都會自動套用 migration 到 Supabase，避免「程式更新但資料表沒更新」。
@@ -467,6 +419,10 @@ R2_PUBLIC_BASE_URL
 ```
 DATABASE_URL              = (B-2)
 DATABASE_DIRECT_URL       = (B-2)
+SUPABASE_URL              = (C-2)
+SUPABASE_SERVICE_ROLE_KEY = (C-2)
+STORAGE_PROVIDER          = supabase
+STORAGE_BUCKET            = trip-files
 LINE_LOGIN_CHANNEL_ID     = (A-3)
 LINE_LOGIN_CHANNEL_SECRET = (A-3)
 LIFF_ID                   = (A-4)
@@ -475,11 +431,6 @@ LIFF_CHANNEL_ID           = (A-4，= LINE_LOGIN_CHANNEL_ID)
 LINE_CHANNEL_ID           = (A-5)
 LINE_CHANNEL_SECRET       = (A-5)
 LINE_CHANNEL_ACCESS_TOKEN = (A-5)
-R2_ACCOUNT_ID             = (C-3)
-R2_ACCESS_KEY_ID          = (C-4)
-R2_SECRET_ACCESS_KEY      = (C-4)
-R2_BUCKET                 = tripsplit-prod
-R2_PUBLIC_BASE_URL        = (C-4)
 ```
 
 ### 自己生成的隨機字串
@@ -605,6 +556,8 @@ https://<APP_URL>
 https://<APP_URL>/api/line/webhook
 ```
 
+> ⚠️ **不要加結尾斜線**。請填 `.../webhook`，不要填成 `.../webhook/`，否則 LINE 驗證時可能收到 `308 Permanent Redirect`。
+
 4. 點 **Update**
 5. 點旁邊的 **Verify** 按鈕，應該回 `Success`
    - ❌ 失敗：表示 webhook endpoint 沒回應，請檢查 Vercel 部署是否成功
@@ -656,6 +609,7 @@ npm run db:migrate:deploy
 5. 登入後應該回到你的 app 並建立帳號
 
 ❌ **常見錯誤**：
+
 - `redirect_uri_mismatch` → E-2 沒做或值不對
 - `invalid_request` → channel 還在 Developing 狀態，但你的測試帳號不是 Tester
   - 解法：到 Channel → Roles → 把你的 LINE 帳號加為 Tester
@@ -675,21 +629,23 @@ https://liff.line.me/<LIFF_ID>
 3. 應該**自動登入**，不需要再按登入按鈕
 
 ❌ **常見錯誤**：
+
 - 一直白屏 / 跳出 LIFF 錯誤 → 檢查 LIFF Endpoint URL 是否正確
 - 重複跳轉登入頁 → `LIFF_CHANNEL_ID` 設錯，必須等於 `LINE_LOGIN_CHANNEL_ID`
 
 ---
 
-## F-4. 測試上傳收據（驗證 R2）
+## F-4. 測試上傳收據（驗證 Supabase Storage）
 
 1. 登入後，建一筆旅程
 2. 新增一筆費用，**上傳收據圖片**
 3. 重新整理頁面，確認收據還在
-4. 到 Cloudflare R2 → bucket → 應該看到一個新的物件
+4. 到 Supabase → Storage → `trip-files` bucket → 應該看到一個新的 `uploads/{userId}/...` 物件
 
 ❌ **常見錯誤**：
-- 上傳失敗 → 檢查 Vercel logs，最常見是 `R2_SECRET_ACCESS_KEY` 抄錯
-- 圖片無法顯示 → 檢查 `R2_PUBLIC_BASE_URL` 格式
+
+- 上傳失敗 → 檢查 Vercel logs，最常見是 `SUPABASE_SERVICE_ROLE_KEY` 或 `STORAGE_BUCKET` 設錯
+- 圖片無法顯示 → 確認 bucket 是 private 且 API 能產生 signed URL
 
 ---
 
@@ -701,6 +657,7 @@ https://liff.line.me/<LIFF_ID>
 4. 應該在 LINE 對話中收到通知
 
 ❌ **常見錯誤**：
+
 - 沒收到通知 → 你還沒加 OA 為好友
 - `401 Unauthorized` → `LINE_CHANNEL_ACCESS_TOKEN` 錯誤或過期，重新 issue
 - OA 自動回了一個訊息 → A-5-5 沒做，回去把「自動回應」關掉
@@ -714,9 +671,13 @@ https://liff.line.me/<LIFF_ID>
 對照 `.env.example`，最終你應該有這 21 個變數（Notion 兩個是選填）：
 
 ```env
-# === Database ===
+# === Database / Supabase ===
 DATABASE_URL
 DATABASE_DIRECT_URL
+SUPABASE_URL
+SUPABASE_SERVICE_ROLE_KEY
+STORAGE_PROVIDER
+STORAGE_BUCKET
 
 # === Session ===
 SESSION_SECRET
@@ -736,13 +697,6 @@ LINE_LOGIN_CHANNEL_ID
 LINE_LOGIN_CHANNEL_SECRET
 LINE_LOGIN_REDIRECT_URI
 
-# === Cloudflare R2 ===
-R2_ACCOUNT_ID
-R2_ACCESS_KEY_ID
-R2_SECRET_ACCESS_KEY
-R2_BUCKET
-R2_PUBLIC_BASE_URL
-
 # === App ===
 APP_URL
 NEXT_PUBLIC_APP_URL
@@ -759,53 +713,60 @@ NOTION_PARENT_PAGE_ID
 
 ## 🚨 安全注意事項
 
-| 千萬別做 | 原因 |
-|---|---|
-| 把 `.env` commit 到 git | Secret 外洩 |
-| 把 `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` 貼到聊天室或截圖分享 | 別人可以冒用你的 OA 推訊息 |
-| 把 R2 Secret Access Key 貼到 GitHub Issue / 公開地方 | 別人可以讀寫你的 bucket |
-| 在 Production 把 LINE Login channel 設為 Published 後又想改回 Developing | **不可逆** |
-| 把 Supabase 的 `Database Password` 用在自己懂的帳號密碼組合 | 一旦洩漏，整個 DB 被駭 |
+| 千萬別做                                                                    | 原因                                      |
+| --------------------------------------------------------------------------- | ----------------------------------------- |
+| 把 `.env` commit 到 git                                                     | Secret 外洩                               |
+| 把 `LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` 貼到聊天室或截圖分享 | 別人可以冒用你的 OA 推訊息                |
+| 把 `SUPABASE_SERVICE_ROLE_KEY` 貼到 GitHub Issue / 公開地方                 | 別人可以繞過 RLS 並讀寫你的 Supabase 資源 |
+| 在 Production 把 LINE Login channel 設為 Published 後又想改回 Developing    | **不可逆**                                |
+| 把 Supabase 的 `Database Password` 用在自己懂的帳號密碼組合                 | 一旦洩漏，整個 DB 被駭                    |
 
 ---
 
 ## 🔁 之後要更新時的最小流程
 
-| 你改了什麼 | 要做什麼 |
-|---|---|
-| 程式碼（src/） | `git push` → Vercel 自動部署 |
-| Prisma schema | `git push` → 部署時自動跑 `prisma migrate deploy` |
-| 環境變數 | Vercel → Settings → Env Vars 改完，**手動 Redeploy** |
-| 換正式 domain | 階段 E 全部重做一次（換 LINE 設定的網址） |
-| LINE OA 訊息內容 | https://manager.line.biz/ |
+| 你改了什麼       | 要做什麼                                             |
+| ---------------- | ---------------------------------------------------- |
+| 程式碼（src/）   | `git push` → Vercel 自動部署                         |
+| Prisma schema    | `git push` → 部署時自動跑 `prisma migrate deploy`    |
+| 環境變數         | Vercel → Settings → Env Vars 改完，**手動 Redeploy** |
+| 換正式 domain    | 階段 E 全部重做一次（換 LINE 設定的網址）            |
+| LINE OA 訊息內容 | https://manager.line.biz/                            |
 
 ---
 
 ## ❓ 常見問題
 
 ### Q1. 我可以先用 ngrok 在本機測試嗎？
+
 可以，但 LINE Login 的 callback URL **必須是公開 https**，所以你要：
+
 1. 跑 `ngrok http 3000` 拿一個臨時 https URL
 2. 把這個 URL 暫時設為 `LINE_LOGIN_REDIRECT_URI`
 3. 同時更新 LINE Login Channel 的 Callback URL
 4. 但 ngrok 每次重啟會換 URL，要再改一次，很煩
-**建議**：直接用 Vercel preview deployment 測，也是免費。
+   **建議**：直接用 Vercel preview deployment 測，也是免費。
 
 ### Q2. 我的 LINE Channel 是「Developing」狀態，朋友登不進去？
+
 Developing 狀態只允許 **Tester 角色**的 LINE 帳號登入。
+
 - 短期：到 Channel → Roles → Add → 把朋友加為 Tester（限 100 人）
 - 長期：把 Channel 切換為 **Published**（按 Channel 頁面右上角的 `Developing` 切換）
   - ⚠️ **一旦 Published 就不能改回 Developing**
 
 ### Q3. Supabase 免費方案會不會被自動暫停？
+
 會。**連續 7 天沒有任何 query** 就會 pause。隨便登入用一下就會解除。
 正式上線後不會發生這問題。
 
-### Q4. R2 free tier 真的不用錢？
-10GB 儲存 + 每月 100 萬次 Class A 請求（寫入）+ 1000 萬次 Class B 請求（讀取）以內免費。
-**但即使在免費額度內也要綁信用卡**，超過才會收費。
+### Q4. Supabase Storage 免費額度夠用嗎？
+
+Free plan 目前包含 1GB file storage 與 5GB egress，對小型 demo、個人旅遊分帳與少量收據通常夠用。
+如果收據照片很多，建議壓縮圖片或升級方案。
 
 ### Q5. 我可以用自己的網域嗎？
+
 可以。Vercel → Project → Settings → Domains → 新增你的網域，按指示設 DNS。
 之後階段 E 的所有設定都改用你的網域即可。
 
@@ -813,12 +774,12 @@ Developing 狀態只允許 **Tester 角色**的 LINE 帳號登入。
 
 ## 📚 官方文件參考
 
-| 主題 | 連結 |
-|---|---|
-| LINE Login getting started | https://developers.line.biz/en/docs/line-login/getting-started/ |
-| LIFF getting started | https://developers.line.biz/en/docs/liff/getting-started/ |
+| 主題                          | 連結                                                               |
+| ----------------------------- | ------------------------------------------------------------------ |
+| LINE Login getting started    | https://developers.line.biz/en/docs/line-login/getting-started/    |
+| LIFF getting started          | https://developers.line.biz/en/docs/liff/getting-started/          |
 | Messaging API getting started | https://developers.line.biz/en/docs/messaging-api/getting-started/ |
-| Supabase + Prisma | https://www.prisma.io/docs/orm/overview/databases/supabase |
-| Cloudflare R2 quickstart | https://developers.cloudflare.com/r2/get-started/ |
-| Vercel env variables | https://vercel.com/docs/projects/environment-variables |
-| Vercel function regions | https://vercel.com/docs/projects/edge-network/regions |
+| Supabase + Prisma             | https://www.prisma.io/docs/orm/overview/databases/supabase         |
+| Supabase Storage              | https://supabase.com/docs/guides/storage                           |
+| Vercel env variables          | https://vercel.com/docs/projects/environment-variables             |
+| Vercel function regions       | https://vercel.com/docs/projects/edge-network/regions              |

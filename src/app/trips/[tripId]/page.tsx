@@ -313,6 +313,7 @@ export default function TripDetailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...expenseForm,
+        receiptUrl: undefined,
         exchangeRate: expenseForm.exchangeRate || "1",
         splits,
       }),
@@ -350,6 +351,7 @@ export default function TripDetailPage() {
       date: formatDateForInput(expense.date),
       paidById: expense.paidBy.id,
       splitType: expense.splitType,
+      receiptKey: expense.receiptKey || "",
       receiptUrl: expense.receiptUrl || "",
       exchangeRate: String(expense.exchangeRate),
     });
@@ -670,6 +672,7 @@ export default function TripDetailPage() {
               onAddCustomCategory={addCustomCategory}
               onDeleteCustomCategory={deleteCustomCategory}
               isOwner={trip.permissions.isOwner}
+              editingExpenseId={editingExpenseId}
             />
           )}
 

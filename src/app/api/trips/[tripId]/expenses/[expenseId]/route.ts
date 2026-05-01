@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { forbidden, requireUser } from "@/lib/auth";
 import { recordSideEffects } from "@/lib/side-effects";
+import { deleteObject, isReceiptStorageKey, isReceiptStorageKeyForUser } from "@/lib/storage";
 import { formatZodErrors, updateExpenseSchema } from "@/lib/validations";
 
 async function canManageExpense(userId: string, expenseId: string) {
@@ -39,6 +40,10 @@ export async function PATCH(
     return NextResponse.json({ error: "費用不存在" }, { status: 404 });
   }
 
+  if (permission.expense.tripId !== params.tripId) {
+    return NextResponse.json({ error: "費用不存在" }, { status: 404 });
+  }
+
   if (!permission.allowed) {
     return forbidden("你沒有權限修改這筆費用");
   }
@@ -64,7 +69,7 @@ export async function PATCH(
     paidById,
     splitType,
     splits,
-    receiptUrl,
+    receiptKey,
     settlementMode,
     settlementNote,
   } = parsed.data;
@@ -101,6 +106,10 @@ export async function PATCH(
     return NextResponse.json({ error: "分攤對象必須是旅程成員" }, { status: 400 });
   }
 
+  if (receiptKey && !isReceiptStorageKeyForUser(receiptKey, user.id)) {
+    return NextResponse.json({ error: "收據檔案不屬於目前使用者" }, { status: 400 });
+  }
+
   const expense = await prisma.$transaction(async (tx) => {
     await tx.split.deleteMany({ where: { expenseId: params.expenseId } });
 
@@ -116,7 +125,7 @@ export async function PATCH(
         ...(date && { date: new Date(date) }),
         ...(paidById && { paidById }),
         ...(splitType && { splitType }),
-        ...(receiptUrl !== undefined && { receiptUrl: receiptUrl || null }),
+        ...(receiptKey !== undefined && { receiptKey: receiptKey || null }),
         ...(settlementMode && { settlementMode }),
         ...(settlementNote !== undefined && { settlementNote: settlementNote || null }),
         ...(splits && {
@@ -155,6 +164,15 @@ export async function PATCH(
     },
   });
 
+  if (
+    receiptKey !== undefined &&
+    permission.expense.receiptKey &&
+    isReceiptStorageKey(permission.expense.receiptKey) &&
+    permission.expense.receiptKey !== receiptKey
+  ) {
+    await deleteObject(permission.expense.receiptKey).catch(() => undefined);
+  }
+
   return NextResponse.json(serializePrisma(expense));
 }
 
@@ -171,12 +189,20 @@ export async function DELETE(
     return NextResponse.json({ error: "費用不存在" }, { status: 404 });
   }
 
+  if (permission.expense.tripId !== params.tripId) {
+    return NextResponse.json({ error: "費用不存在" }, { status: 404 });
+  }
+
   if (!permission.allowed) {
     return forbidden("你沒有權限刪除這筆費用");
   }
 
   const expenseToDelete = permission.expense;
   await prisma.expense.delete({ where: { id: params.expenseId } });
+
+  if (expenseToDelete.receiptKey && isReceiptStorageKey(expenseToDelete.receiptKey)) {
+    await deleteObject(expenseToDelete.receiptKey).catch(() => undefined);
+  }
 
   await recordSideEffects({
     tripId: params.tripId,
