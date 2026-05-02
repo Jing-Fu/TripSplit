@@ -207,16 +207,16 @@ export default function HomePage() {
                   </button>
 
                   {showNotifications && (
-                    <div className="absolute right-0 top-12 z-20 w-80 rounded-2xl border border-gray-100 bg-white p-3 shadow-lg">
+                    <div className="fixed left-4 right-4 top-20 z-50 max-h-[calc(100vh-6rem)] rounded-2xl border border-gray-100 bg-white p-3 shadow-lg sm:absolute sm:left-auto sm:right-0 sm:top-12 sm:w-80">
                       <div className="mb-2 flex items-center justify-between">
                         <p className="text-sm font-medium text-gray-700">{t("home.notificationCenter")}</p>
                         <span className="text-xs text-gray-400">{t("home.recent50")}</span>
                       </div>
 
                       {notifications.length === 0 ? (
-                          <p className="py-4 text-center text-sm text-gray-400">{t("home.noNotifications")}</p>
+                        <p className="py-4 text-center text-sm text-gray-400">{t("home.noNotifications")}</p>
                       ) : (
-                        <div className="max-h-96 space-y-2 overflow-y-auto">
+                        <div className="max-h-[calc(100vh-10rem)] space-y-2 overflow-y-auto sm:max-h-96">
                           {notifications.map((notification) => (
                             <button
                               key={notification.id}
