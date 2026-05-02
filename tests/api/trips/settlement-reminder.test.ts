@@ -35,7 +35,7 @@ describe("POST /api/trips/[tripId]/settlement-reminder", () => {
   it("requires LINE push configuration before claiming reminders", async () => {
     delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
-    const response = await POST(makeRequest(), { params: { tripId: "trip-1" } });
+    const response = await POST(makeRequest(), { params: Promise.resolve({ tripId: "trip-1" }) });
     const body = await response.json();
 
     expect(response.status).toBe(500);
@@ -47,7 +47,7 @@ describe("POST /api/trips/[tripId]/settlement-reminder", () => {
   it("only allows the trip owner to complete settlement reminders", async () => {
     getTripForReminder.mockResolvedValue({ id: "trip-1", ownerId: "another-user" });
 
-    const response = await POST(makeRequest(), { params: { tripId: "trip-1" } });
+    const response = await POST(makeRequest(), { params: Promise.resolve({ tripId: "trip-1" }) });
     const body = await response.json();
 
     expect(response.status).toBe(403);
@@ -60,7 +60,7 @@ describe("POST /api/trips/[tripId]/settlement-reminder", () => {
     getTripForReminder.mockResolvedValue(trip);
     sendSettlementReminders.mockResolvedValue({ attempted: 2, sent: 2, failed: 0, skipped: 0 });
 
-    const response = await POST(makeRequest(), { params: { tripId: "trip-1" } });
+    const response = await POST(makeRequest(), { params: Promise.resolve({ tripId: "trip-1" }) });
     const body = await response.json();
 
     expect(response.status).toBe(200);

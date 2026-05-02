@@ -6,8 +6,9 @@ import { buildTripExportJSON, getTripForUser } from "@/lib/trip-export";
 
 export async function POST(
   request: Request,
-  { params }: { params: { tripId: string } }
+  { params: paramsPromise }: { params: Promise<{ tripId: string }> }
 ) {
+  const params = await paramsPromise;
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
 

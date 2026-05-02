@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 export default function Error({
   error,
   reset,
@@ -22,12 +24,12 @@ export default function Error({
           >
             重新載入
           </button>
-          <a
+          <Link
             href="/"
             className="rounded-2xl border border-gray-200 px-6 py-3 font-medium text-gray-500 transition-colors hover:border-gray-300"
           >
             回首頁
-          </a>
+          </Link>
         </div>
       </div>
     </div>

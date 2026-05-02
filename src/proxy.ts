@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const LINE_WEBHOOK_PATH = "/api/line/webhook";
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname !== LINE_WEBHOOK_PATH && pathname.startsWith(`${LINE_WEBHOOK_PATH}/`)) {

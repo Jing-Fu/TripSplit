@@ -14,8 +14,9 @@ async function getTripForUser(tripId: string, userId: string) {
 
 export async function GET(
   request: Request,
-  { params }: { params: { tripId: string } }
+  { params: paramsPromise }: { params: Promise<{ tripId: string }> }
 ) {
+  const params = await paramsPromise;
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
 
@@ -41,8 +42,9 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  { params }: { params: { tripId: string } }
+  { params: paramsPromise }: { params: Promise<{ tripId: string }> }
 ) {
+  const params = await paramsPromise;
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
 

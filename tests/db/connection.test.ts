@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 const mockPrismaClient = vi.hoisted(() =>
-  vi.fn(() => ({ __mock: 'PrismaClient' })),
+  vi.fn(function MockPrismaClient() {
+    return { __mock: 'PrismaClient' }
+  }),
 )
 
 vi.mock('@prisma/client', () => ({

@@ -7,8 +7,9 @@ import { formatZodErrors, updatePaymentStatusSchema } from "@/lib/validations";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { tripId: string; paymentId: string } }
+  { params: paramsPromise }: { params: Promise<{ tripId: string; paymentId: string }> }
 ) {
+  const params = await paramsPromise;
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
 

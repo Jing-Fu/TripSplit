@@ -4,8 +4,9 @@ import { requireUser } from "@/lib/auth";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { notificationId: string } }
+  { params: paramsPromise }: { params: Promise<{ notificationId: string }> }
 ) {
+  const params = await paramsPromise;
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
 

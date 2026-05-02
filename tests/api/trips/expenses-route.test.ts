@@ -76,7 +76,7 @@ describe("expense receipt storage boundaries", () => {
         ...validExpenseBody,
         receiptKey: "uploads/another-user/receipt.jpg",
       }),
-      { params: { tripId: "trip-1" } }
+      { params: Promise.resolve({ tripId: "trip-1" }) }
     );
     const body = await response.json();
 
@@ -100,7 +100,7 @@ describe("expense receipt storage boundaries", () => {
       jsonRequest("http://localhost/api/trips/trip-b/expenses/expense-1", {
         description: "Updated",
       }),
-      { params: { tripId: "trip-b", expenseId: "expense-1" } }
+      { params: Promise.resolve({ tripId: "trip-b", expenseId: "expense-1" }) }
     );
     const body = await response.json();
 
@@ -124,7 +124,7 @@ describe("expense receipt storage boundaries", () => {
 
     const response = await DELETE(
       new Request("http://localhost/api/trips/trip-b/expenses/expense-1", { method: "DELETE" }),
-      { params: { tripId: "trip-b", expenseId: "expense-1" } }
+      { params: Promise.resolve({ tripId: "trip-b", expenseId: "expense-1" }) }
     );
     const body = await response.json();
 
@@ -150,7 +150,7 @@ describe("expense receipt storage boundaries", () => {
 
     const response = await DELETE(
       new Request("http://localhost/api/trips/trip-1/expenses/expense-1", { method: "DELETE" }),
-      { params: { tripId: "trip-1", expenseId: "expense-1" } }
+      { params: Promise.resolve({ tripId: "trip-1", expenseId: "expense-1" }) }
     );
 
     expect(response.status).toBe(200);

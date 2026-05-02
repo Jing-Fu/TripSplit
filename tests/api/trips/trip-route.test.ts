@@ -56,7 +56,7 @@ describe("GET /api/trips/[tripId] receipt URLs", () => {
     });
 
     const response = await GET(new Request("http://localhost/api/trips/trip-1"), {
-      params: { tripId: "trip-1" },
+      params: Promise.resolve({ tripId: "trip-1" }),
     });
     const body = await response.json();
 
