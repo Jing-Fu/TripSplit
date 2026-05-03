@@ -3,6 +3,7 @@ import {
   type PairwiseBreakdown,
   type SuggestedSettlement,
 } from "@/lib/settlement";
+import { useState } from "react";
 import { useLocale } from "@/lib/i18n/context";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { getCategoryInfo } from "./helpers";
@@ -64,8 +65,28 @@ export function SettlementView({
   onCompleteSettlement,
 }: SettlementViewProps) {
   const { t } = useLocale();
+  const [expandedPersonGroups, setExpandedPersonGroups] = useState<Record<string, boolean>>({});
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
   const specialExpenses = expenses.filter((expense) => expense.settlementMode !== "normal");
+  const allPersonGroupsExpanded =
+    personSettlementGroups.length > 0 &&
+    personSettlementGroups.every((group) => expandedPersonGroups[group.memberId]);
+
+  const togglePersonGroup = (memberId: string) => {
+    setExpandedPersonGroups((prev) => ({
+      ...prev,
+      [memberId]: !prev[memberId],
+    }));
+  };
+
+  const toggleAllPersonGroups = () => {
+    const nextExpanded = !allPersonGroupsExpanded;
+    setExpandedPersonGroups(
+      Object.fromEntries(
+        personSettlementGroups.map((group) => [group.memberId, nextExpanded])
+      )
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -287,59 +308,104 @@ export function SettlementView({
       )}
 
       <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
-        <h3 className="mb-1 text-sm font-medium text-gray-500">{t("settlement.personViewTitle")}</h3>
-        <p className="mb-4 text-xs text-gray-400">{t("settlement.personViewDescription")}</p>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-gray-500">{t("settlement.personViewTitle")}</h3>
+            <p className="mt-1 text-xs text-gray-400">{t("settlement.personViewDescription")}</p>
+          </div>
+          {personSettlementGroups.length > 0 && (
+            <button
+              type="button"
+              onClick={toggleAllPersonGroups}
+              className="self-start rounded-xl border border-gray-200 px-3 py-2 text-xs font-medium text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700 active:bg-gray-50"
+            >
+              {allPersonGroupsExpanded
+                ? t("settlement.personCollapseAll")
+                : t("settlement.personExpandAll")}
+            </button>
+          )}
+        </div>
         <div className="space-y-4">
-          {personSettlementGroups.map((group) => (
-            <div key={group.memberId} className="rounded-2xl border border-gray-100 p-3 sm:p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h4 className="font-medium text-gray-800">{group.memberName}</h4>
-                  <p className="mt-1 text-xs text-gray-400">
-                     {t("settlement.toPayAndReceive")
-                       .replace("{pay}", formatCurrency(group.totalToPay, currency))
-                       .replace("{receive}", formatCurrency(group.totalToReceive, currency))}
-                  </p>
-                </div>
-              </div>
+          {personSettlementGroups.map((group) => {
+            const isExpanded = expandedPersonGroups[group.memberId] ?? false;
+            const transferCount = group.outgoing.length + group.incoming.length;
 
-              <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2">
-                <div className="rounded-xl bg-red-50/60 p-3">
-                   <h5 className="text-sm font-medium text-red-600">{t("settlement.outgoingTitle")}</h5>
-                  {group.outgoing.length === 0 ? (
-                     <p className="mt-2 text-xs text-gray-400">{t("settlement.outgoingEmpty")}</p>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      {group.outgoing.map((item) => (
-                        <div key={`${group.memberId}-${item.toMemberId}`} className="rounded-lg bg-white px-3 py-2">
-                           <p className="text-sm text-gray-700">{t("settlement.payTo").replace("{name}", item.to)}</p>
-                          <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.amount, currency)}</p>
-                          <p className="mt-1 text-xs text-gray-400">{item.items.map((expense) => expense.description).join("、")}</p>
-                        </div>
-                      ))}
+            return (
+              <div key={group.memberId} className="rounded-2xl border border-gray-100 p-3 sm:p-4">
+                <button
+                  type="button"
+                  onClick={() => togglePersonGroup(group.memberId)}
+                  className="flex w-full flex-col gap-3 text-left sm:flex-row sm:items-center sm:justify-between"
+                  aria-expanded={isExpanded}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-medium text-gray-800">{group.memberName}</h4>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-500">
+                        {t("settlement.personTransferCount").replace("{count}", String(transferCount))}
+                      </span>
                     </div>
-                  )}
-                </div>
+                    <p className="mt-1 text-xs text-gray-400">
+                       {t("settlement.toPayAndReceive")
+                         .replace("{pay}", formatCurrency(group.totalToPay, currency))
+                         .replace("{receive}", formatCurrency(group.totalToReceive, currency))}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 sm:justify-end">
+                    <div className="flex gap-2">
+                      <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                        -{formatCurrency(group.totalToPay, currency)}
+                      </span>
+                      <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-600">
+                        +{formatCurrency(group.totalToReceive, currency)}
+                      </span>
+                    </div>
+                    <span className="text-sm text-gray-400" aria-hidden="true">
+                      {isExpanded ? "▴" : "▾"}
+                    </span>
+                  </div>
+                </button>
 
-                <div className="rounded-xl bg-green-50/60 p-3">
-                   <h5 className="text-sm font-medium text-green-600">{t("settlement.incomingTitle")}</h5>
-                  {group.incoming.length === 0 ? (
-                     <p className="mt-2 text-xs text-gray-400">{t("settlement.incomingEmpty")}</p>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      {group.incoming.map((item) => (
-                        <div key={`${group.memberId}-${item.fromMemberId}`} className="rounded-lg bg-white px-3 py-2">
-                           <p className="text-sm text-gray-700">{t("settlement.collectFrom").replace("{name}", item.from)}</p>
-                          <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.amount, currency)}</p>
-                          <p className="mt-1 text-xs text-gray-400">{item.items.map((expense) => expense.description).join("、")}</p>
+                {isExpanded && (
+                  <div className="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2">
+                    <div className="rounded-xl bg-red-50/60 p-3">
+                       <h5 className="text-sm font-medium text-red-600">{t("settlement.outgoingTitle")}</h5>
+                      {group.outgoing.length === 0 ? (
+                         <p className="mt-2 text-xs text-gray-400">{t("settlement.outgoingEmpty")}</p>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {group.outgoing.map((item) => (
+                            <div key={`${group.memberId}-${item.toMemberId}`} className="rounded-lg bg-white px-3 py-2">
+                               <p className="text-sm text-gray-700">{t("settlement.payTo").replace("{name}", item.to)}</p>
+                              <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.amount, currency)}</p>
+                              <p className="mt-1 text-xs text-gray-400">{item.items.map((expense) => expense.description).join("、")}</p>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  )}
-                </div>
+
+                    <div className="rounded-xl bg-green-50/60 p-3">
+                       <h5 className="text-sm font-medium text-green-600">{t("settlement.incomingTitle")}</h5>
+                      {group.incoming.length === 0 ? (
+                         <p className="mt-2 text-xs text-gray-400">{t("settlement.incomingEmpty")}</p>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {group.incoming.map((item) => (
+                            <div key={`${group.memberId}-${item.fromMemberId}`} className="rounded-lg bg-white px-3 py-2">
+                               <p className="text-sm text-gray-700">{t("settlement.collectFrom").replace("{name}", item.from)}</p>
+                              <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.amount, currency)}</p>
+                              <p className="mt-1 text-xs text-gray-400">{item.items.map((expense) => expense.description).join("、")}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
