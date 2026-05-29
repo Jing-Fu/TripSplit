@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildClientExportJSON, buildClientExportCSV } from "../export-format";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildClientExportJSON, buildClientExportCSV, downloadFile } from "../export-format";
 
 const mockTrip = {
   name: "Tokyo Trip",
@@ -101,5 +101,73 @@ describe("buildClientExportCSV", () => {
 
     const csv = buildClientExportCSV(tripWithUnknown);
     expect(csv).toContain("其他");
+  });
+
+  it("escapes commas, quotes, and newlines across exported fields", () => {
+    const tripWithSpecialChars = {
+      ...mockTrip,
+      expenses: [
+        {
+          ...mockTrip.expenses[0],
+          description: 'Taxi, "late night"',
+          paidBy: { name: "Alice, Jr." },
+          splitType: "custom\nplan",
+          note: 'Gate A\nAsk for "receipt"',
+        },
+      ],
+    };
+
+    const csv = buildClientExportCSV(tripWithSpecialChars);
+
+    expect(csv).toContain('"Taxi, ""late night"""');
+    expect(csv).toContain('"Alice, Jr."');
+    expect(csv).toContain('"custom\nplan"');
+    expect(csv).toContain('"Gate A\nAsk for ""receipt"""');
+  });
+});
+
+describe("downloadFile", () => {
+  const createObjectURL = vi.fn(() => "blob:mock-url");
+  const revokeObjectURL = vi.fn();
+  const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    createObjectURL.mockClear();
+    revokeObjectURL.mockClear();
+    vi.stubGlobal("URL", {
+      createObjectURL,
+      revokeObjectURL,
+    });
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  afterEach(() => {
+    clickSpy.mockClear();
+  });
+
+  it("appends a temporary download link and revokes the object URL after the click", () => {
+    const appendSpy = vi.spyOn(document.body, "appendChild");
+    const removeSpy = vi.spyOn(document.body, "removeChild");
+
+    downloadFile("hello", "report.txt", "text/plain");
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(appendSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1000);
+
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
+
+    appendSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 });

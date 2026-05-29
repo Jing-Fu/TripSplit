@@ -125,20 +125,30 @@ export function buildClientExportCSV(
   const rows = trip.expenses.map((e) => {
     const catLabel = resolveCategoryLabel(e.category, customCats);
     return [
-      formatDateForInput(e.date),
-      `"${e.description.replace(/"/g, '""')}"`,
-      e.amount,
-      e.currency,
-      e.exchangeRate,
-      (e.amount * e.exchangeRate).toFixed(2),
-      catLabel,
-      e.paidBy.name,
-      e.splitType,
-      `"${(e.note || "").replace(/"/g, '""')}"`,
+      escapeCsvCell(formatDateForInput(e.date)),
+      escapeCsvCell(e.description),
+      escapeCsvCell(e.amount),
+      escapeCsvCell(e.currency),
+      escapeCsvCell(e.exchangeRate),
+      escapeCsvCell((e.amount * e.exchangeRate).toFixed(2)),
+      escapeCsvCell(catLabel),
+      escapeCsvCell(e.paidBy.name),
+      escapeCsvCell(e.splitType),
+      escapeCsvCell(e.note || ""),
     ].join(",");
   });
 
   return "\uFEFF" + [header, ...rows].join("\n");
+}
+
+function escapeCsvCell(value: string | number) {
+  const normalized = String(value);
+
+  if (!/[",\n\r]/.test(normalized)) {
+    return normalized;
+  }
+
+  return `"${normalized.replace(/"/g, '""')}"`;
 }
 
 export function downloadFile(
@@ -151,6 +161,9 @@ export function downloadFile(
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(link);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

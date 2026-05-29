@@ -91,7 +91,15 @@ export async function exportSettlementImage({
     suggestedSettlements.forEach((s) => {
       const row = document.createElement("div");
       row.style.cssText = "display:flex;justify-content:space-between;padding:8px 12px;margin-bottom:4px;background:#f9fafb;border-radius:8px;font-size:14px;";
-      row.innerHTML = `<span>${s.from} → ${s.to}</span><strong>${formatCurrency(s.amount, trip.currency)}</strong>`;
+
+      const label = document.createElement("span");
+      label.textContent = `${s.from} → ${s.to}`;
+      row.appendChild(label);
+
+      const value = document.createElement("strong");
+      value.textContent = formatCurrency(s.amount, trip.currency);
+      row.appendChild(value);
+
       container.appendChild(row);
     });
   } else {
