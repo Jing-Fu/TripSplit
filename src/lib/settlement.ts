@@ -1,3 +1,5 @@
+import { isExpenseSettleable } from "@/lib/expense-settlement";
+
 type SettlementMember = {
   id: string;
   name: string;
@@ -77,11 +79,8 @@ export function calculateSuggestedSettlements(
   expenses: SettlementExpense[],
   payments: RecordedSettlementPayment[] = []
 ): SuggestedSettlement[] {
-  const settleableExpenses = expenses.filter(
-    (expense) => {
-      const mode = expense.settlementMode || "normal";
-      return mode === "normal" || mode === "partial";
-    }
+  const settleableExpenses = expenses.filter((expense) =>
+    isExpenseSettleable(expense.settlementMode)
   );
   const balances: Record<string, number> = {};
 
@@ -90,20 +89,12 @@ export function calculateSuggestedSettlements(
   });
 
   settleableExpenses.forEach((expense) => {
-    let ratio = 1;
-    if (expense.settlementMode === "partial" && expense.settlementNote) {
-      const pct = parseInt(expense.settlementNote, 10);
-      if (!isNaN(pct) && pct > 0 && pct < 100) {
-        ratio = pct / 100;
-      }
-    }
-
-    const amountInBase = expense.amount * expense.exchangeRate * ratio;
+    const amountInBase = expense.amount * expense.exchangeRate;
     balances[expense.paidBy.id] = (balances[expense.paidBy.id] || 0) + amountInBase;
 
     expense.splits.forEach((split) => {
       balances[split.member.id] =
-        (balances[split.member.id] || 0) - split.amount * expense.exchangeRate * ratio;
+        (balances[split.member.id] || 0) - split.amount * expense.exchangeRate;
     });
   });
 
@@ -164,29 +155,18 @@ export function calculateSuggestedSettlements(
 export function calculatePairwiseBreakdown(
   expenses: SettlementExpense[]
 ): PairwiseBreakdown[] {
-  const settleableExpenses = expenses.filter(
-    (expense) => {
-      const mode = expense.settlementMode || "normal";
-      return mode === "normal" || mode === "partial";
-    }
+  const settleableExpenses = expenses.filter((expense) =>
+    isExpenseSettleable(expense.settlementMode)
   );
   const breakdownMap = new Map<string, PairwiseBreakdown>();
 
   settleableExpenses.forEach((expense) => {
-    let ratio = 1;
-    if (expense.settlementMode === "partial" && expense.settlementNote) {
-      const pct = parseInt(expense.settlementNote, 10);
-      if (!isNaN(pct) && pct > 0 && pct < 100) {
-        ratio = pct / 100;
-      }
-    }
-
     expense.splits.forEach((split) => {
       if (split.member.id === expense.paidBy.id) {
         return;
       }
 
-      const amount = Math.round(split.amount * expense.exchangeRate * ratio * 100) / 100;
+      const amount = Math.round(split.amount * expense.exchangeRate * 100) / 100;
 
       if (amount <= 0) {
         return;

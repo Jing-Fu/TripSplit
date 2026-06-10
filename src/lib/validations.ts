@@ -7,7 +7,7 @@ export const createExpenseSchema = z.object({
   category: z.string().min(1, "請選擇類別"),
   description: z.string().min(1, "請輸入說明").max(200, "說明不可超過 200 字"),
   note: z.string().max(500).optional().nullable(),
-  settlementMode: z.enum(["normal", "exclude", "partial"]).default("normal"),
+  settlementMode: z.enum(["normal", "exclude"]).default("normal"),
   settlementNote: z.string().max(500).optional().nullable(),
   date: z.string().min(1, "請選擇日期"),
   paidById: z.string().min(1, "請選擇付款人"),

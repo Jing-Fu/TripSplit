@@ -122,7 +122,7 @@ describe("calculateSuggestedSettlements", () => {
     expect(settlements).toEqual([]);
   });
 
-  it("applies partial ratio from settlementNote", () => {
+  it("treats legacy partial mode as excluded from settlement", () => {
     const expense = makeExpense({
       amount: 300,
       paidBy: alice,
@@ -135,9 +135,7 @@ describe("calculateSuggestedSettlements", () => {
       [expense]
     );
 
-    expect(settlements).toHaveLength(2);
-    expect(settlements[0].amount).toBe(50);
-    expect(settlements[1].amount).toBe(50);
+    expect(settlements).toEqual([]);
   });
 
   it("handles exchange rate correctly", () => {

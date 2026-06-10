@@ -65,6 +65,14 @@ describe("createExpenseSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("rejects removed partial settlement mode", () => {
+    const result = createExpenseSchema.safeParse({
+      ...valid,
+      settlementMode: "partial",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("createTripSchema", () => {

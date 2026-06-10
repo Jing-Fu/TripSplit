@@ -4,21 +4,13 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordSideEffects } from "@/lib/side-effects";
 import { generateInviteCode, generateMemberClaimToken, getAvailableName } from "@/lib/utils";
+import {
+  normalizeExpenseSettlementMode,
+  normalizeExpenseSettlementNote,
+} from "@/lib/expense-settlement";
 import { formatZodErrors, importTripSchema } from "@/lib/validations";
 
 type ImportPayload = z.infer<typeof importTripSchema>;
-
-function normalizeSettlementMode(mode?: string) {
-  if (mode === "external") {
-    return "exclude";
-  }
-
-  if (mode === "partial" || mode === "exclude") {
-    return mode;
-  }
-
-  return "normal";
-}
 
 function normalizeSplitType(splitType?: string) {
   if (splitType === "payer_only" || splitType === "exact") {
@@ -100,8 +92,11 @@ export async function POST(request: Request) {
           exchangeRate: expense.exchangeRate || 1,
           category: expense.category || "other",
           note: expense.note || null,
-          settlementMode: normalizeSettlementMode(expense.settlementMode),
-          settlementNote: expense.settlementNote || null,
+          settlementMode: normalizeExpenseSettlementMode(expense.settlementMode),
+          settlementNote: normalizeExpenseSettlementNote(
+            expense.settlementMode,
+            expense.settlementNote
+          ),
           date: new Date(expense.date),
           paidById,
           splitType: normalizeSplitType(expense.splitType),

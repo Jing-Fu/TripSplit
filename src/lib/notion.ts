@@ -227,19 +227,20 @@ function formatAmount(amount: number, currency: string) {
 }
 
 function formatSettlementMode(mode: string, note: string | null) {
-  if (mode === "normal") {
+  const normalizedMode = normalizeExpenseSettlementMode(mode);
+  const normalizedNote = normalizeExpenseSettlementNote(mode, note);
+
+  if (normalizedMode === "normal") {
     return "正常納入結算";
   }
 
-  if (mode === "exclude") {
-    return note ? `保留記帳，不納入結算（${note}）` : "保留記帳，不納入結算";
+  if (normalizedMode === "exclude") {
+    return normalizedNote
+      ? `保留記帳，不納入結算（${normalizedNote}）`
+      : "保留記帳，不納入結算";
   }
 
-  if (mode === "partial") {
-    return `部分納入結算（${note || "50"}%）`;
-  }
-
-  return mode;
+  return normalizedMode;
 }
 
 function buildPageTitle(payload: TripExportPayload) {
@@ -515,3 +516,7 @@ export async function exportTripToNotion(payload: TripExportPayload) {
     title,
   };
 }
+import {
+  normalizeExpenseSettlementMode,
+  normalizeExpenseSettlementNote,
+} from "@/lib/expense-settlement";

@@ -1,4 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import {
+  normalizeExpenseSettlementMode,
+  normalizeExpenseSettlementNote,
+} from "@/lib/expense-settlement";
 
 export async function getTripForUser(tripId: string, userId: string) {
   return prisma.trip.findFirst({
@@ -57,8 +61,11 @@ export function buildTripExportJSON(trip: TripForExport) {
       paidBy: expense.paidBy.name,
       splitType: expense.splitType,
       note: expense.note,
-      settlementMode: expense.settlementMode,
-      settlementNote: expense.settlementNote,
+      settlementMode: normalizeExpenseSettlementMode(expense.settlementMode),
+      settlementNote: normalizeExpenseSettlementNote(
+        expense.settlementMode,
+        expense.settlementNote
+      ),
       splits: expense.splits.map((split) => ({
         member: split.member.name,
         amount: Number(split.amount),

@@ -1,4 +1,5 @@
 import type { SuggestedSettlement } from "@/lib/settlement";
+import { isExpenseSettleable, normalizeExpenseSettlementMode } from "@/lib/expense-settlement";
 import { useLocale } from "@/lib/i18n/context";
 import { formatCurrency, formatDateForInput } from "@/lib/utils";
 import { getCategoryInfo } from "./helpers";
@@ -24,9 +25,11 @@ function SummaryCard({ label, value, subLabel }: { label: string; value: string;
 export function TripSummaryView({ trip, totalExpenses, settlements, customCategories }: TripSummaryViewProps) {
   const { t } = useLocale();
   const settleableExpenses = trip.expenses.filter(
-    (expense) => expense.settlementMode === "normal" || expense.settlementMode === "partial"
+    (expense) => isExpenseSettleable(expense.settlementMode)
   );
-  const specialExpenses = trip.expenses.filter((expense) => expense.settlementMode === "exclude");
+  const specialExpenses = trip.expenses.filter(
+    (expense) => normalizeExpenseSettlementMode(expense.settlementMode) === "exclude"
+  );
 
   const payerTotals = trip.members.map((member) => ({
     member,

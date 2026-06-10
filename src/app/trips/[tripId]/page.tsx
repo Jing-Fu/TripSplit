@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { buildClientExportCSV, buildClientExportJSON, downloadFile } from "@/lib/export-format";
+import {
+  normalizeExpenseSettlementMode,
+  normalizeExpenseSettlementNote,
+} from "@/lib/expense-settlement";
 import { safeFetch } from "@/lib/fetch";
 import { useLocale } from "@/lib/i18n/context";
 import {
@@ -103,7 +107,17 @@ export default function TripDetailPage() {
     }
 
     const data = await res.json();
-    setTrip(data);
+    setTrip({
+      ...data,
+      expenses: data.expenses.map((expense: Expense) => ({
+        ...expense,
+        settlementMode: normalizeExpenseSettlementMode(expense.settlementMode),
+        settlementNote: normalizeExpenseSettlementNote(
+          expense.settlementMode,
+          expense.settlementNote
+        ),
+      })),
+    });
     setExpenseForm((prev) => {
       if (!prev.paidById && data.currentMemberId) {
         return createDefaultExpenseForm(data.currency, data.currentMemberId);
@@ -346,8 +360,11 @@ export default function TripDetailPage() {
       category: expense.category,
       description: expense.description,
       note: expense.note || "",
-      settlementMode: expense.settlementMode === "external" ? "exclude" : expense.settlementMode || "normal",
-      settlementNote: expense.settlementNote || "",
+      settlementMode: normalizeExpenseSettlementMode(expense.settlementMode),
+      settlementNote: normalizeExpenseSettlementNote(
+        expense.settlementMode,
+        expense.settlementNote
+      ) || "",
       date: formatDateForInput(expense.date),
       paidById: expense.paidBy.id,
       splitType: expense.splitType === "percentage" ? "exact" : expense.splitType,

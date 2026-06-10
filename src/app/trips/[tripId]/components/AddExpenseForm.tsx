@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { CURRENCIES, SPLIT_TYPES } from "@/lib/constants";
 import { safeFetch } from "@/lib/fetch";
@@ -328,38 +329,15 @@ export function AddExpenseForm({
           >
             <option value="normal">{t("expense.settlementNormal")}</option>
             <option value="exclude">{t("expense.settlementExclude")}</option>
-            <option value="partial">部分納入結算（自訂比例）</option>
           </select>
           {form.settlementMode !== "normal" && (
-            <>
-              {form.settlementMode === "partial" && (
-                <div className="mt-2">
-                  <label className="mb-1 block text-xs text-amber-700">納入結算的比例 (%)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="99"
-                    value={form.settlementNote?.match(/^\d+$/) ? form.settlementNote : "50"}
-                    onChange={(e) => setForm((prev) => ({ ...prev, settlementNote: e.target.value }))}
-                    className="w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
-                    placeholder="50"
-                    inputMode="numeric"
-                  />
-                  <p className="mt-1 text-xs text-amber-600">
-                    此筆費用將有 {form.settlementNote?.match(/^\d+$/) ? form.settlementNote : "50"}% 納入結算
-                  </p>
-                </div>
-              )}
-              {form.settlementMode !== "partial" && (
-                <input
-                  type="text"
-                  value={form.settlementNote}
-                  onChange={(e) => setForm((prev) => ({ ...prev, settlementNote: e.target.value }))}
-                  className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
-                   placeholder={t("expense.settlementNotePlaceholder")}
-                />
-              )}
-            </>
+            <input
+              type="text"
+              value={form.settlementNote}
+              onChange={(e) => setForm((prev) => ({ ...prev, settlementNote: e.target.value }))}
+              className="mt-2 w-full rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-base focus:outline-none focus:ring-2 focus:ring-amber-300"
+              placeholder={t("expense.settlementNotePlaceholder")}
+            />
           )}
         </div>
       </div>
@@ -430,8 +408,15 @@ export function AddExpenseForm({
       <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
         <label className="mb-2 block text-sm font-medium text-gray-600">{t("expense.receiptPhoto")}</label>
         {form.receiptUrl ? (
-          <div className="relative">
-            <img src={form.receiptUrl} alt={t("expense.receiptAlt")} className="max-h-48 w-full rounded-xl object-cover" />
+          <div className="relative h-48 overflow-hidden rounded-xl">
+            <Image
+              src={form.receiptUrl}
+              alt={t("expense.receiptAlt")}
+              fill
+              sizes="(max-width: 640px) 100vw, 640px"
+              className="object-cover"
+              unoptimized
+            />
             <div className="absolute right-2 top-2 flex gap-1">
               <button
                 type="button"

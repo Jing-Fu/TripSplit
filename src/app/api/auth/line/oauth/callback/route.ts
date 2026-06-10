@@ -1,13 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionForLineUser, setSessionCookie } from "@/lib/auth";
 import { sanitizeReturnToPath } from "@/lib/utils";
+import {
+  consumePendingLineOAuthState,
+  LINE_OAUTH_STATE_COOKIE,
+  serializePendingLineOAuthStates,
+} from "@/lib/line/oauth-state";
 
 export const runtime = "nodejs";
 
-function redirectToLoginWithError(request: NextRequest, error: string) {
+function applyPendingStateCookie(response: NextResponse, states: { state: string; returnTo: string; expiresAt: number }[]) {
+  if (states.length === 0) {
+    response.cookies.set(LINE_OAUTH_STATE_COOKIE, "", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 0,
+      path: "/",
+    });
+    return;
+  }
+
+  response.cookies.set(LINE_OAUTH_STATE_COOKIE, serializePendingLineOAuthStates(states), {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 600,
+    path: "/",
+  });
+}
+
+function redirectToLoginWithError(
+  request: NextRequest,
+  error: string,
+  states?: { state: string; returnTo: string; expiresAt: number }[]
+) {
   const loginUrl = new URL("/login", request.url);
   loginUrl.searchParams.set("error", error);
-  return NextResponse.redirect(loginUrl);
+  const response = NextResponse.redirect(loginUrl);
+  if (states) {
+    applyPendingStateCookie(response, states);
+  }
+  return response;
 }
 
 export async function GET(request: NextRequest) {
@@ -15,17 +49,22 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get("code");
     const state = searchParams.get("state");
-    const storedState = request.cookies.get("line_oauth_state")?.value;
-    const returnTo = sanitizeReturnToPath(
-      request.cookies.get("line_oauth_return_to")?.value
-    );
+    if (!state) {
+      return redirectToLoginWithError(request, "state_mismatch");
+    }
 
-    if (!state || !storedState || state !== storedState) {
+    const { matchedState, remainingStates } = consumePendingLineOAuthState(
+      request.cookies.get(LINE_OAUTH_STATE_COOKIE)?.value,
+      state
+    );
+    const returnTo = sanitizeReturnToPath(matchedState?.returnTo);
+
+    if (!matchedState) {
       return redirectToLoginWithError(request, "state_mismatch");
     }
 
     if (!code) {
-      return redirectToLoginWithError(request, "missing_code");
+      return redirectToLoginWithError(request, "missing_code", remainingStates);
     }
 
     const channelId = process.env.LINE_LOGIN_CHANNEL_ID;
@@ -33,7 +72,11 @@ export async function GET(request: NextRequest) {
     const redirectUri = process.env.LINE_LOGIN_REDIRECT_URI;
 
     if (!channelId || !channelSecret || !redirectUri) {
-      return redirectToLoginWithError(request, "LINE Login not configured");
+      return redirectToLoginWithError(
+        request,
+        "LINE Login not configured",
+        remainingStates
+      );
     }
 
     const tokenRes = await fetch("https://api.line.me/oauth2/v2.1/token", {
@@ -56,7 +99,8 @@ export async function GET(request: NextRequest) {
       });
       return redirectToLoginWithError(
         request,
-        `token_exchange_failed: ${tokenRes.status} ${tokenErrorText}`
+        `token_exchange_failed: ${tokenRes.status} ${tokenErrorText}`,
+        remainingStates
       );
     }
 
@@ -74,7 +118,8 @@ export async function GET(request: NextRequest) {
       });
       return redirectToLoginWithError(
         request,
-        `profile_fetch_failed: ${profileRes.status} ${profileErrorText}`
+        `profile_fetch_failed: ${profileRes.status} ${profileErrorText}`,
+        remainingStates
       );
     }
 
@@ -92,21 +137,7 @@ export async function GET(request: NextRequest) {
 
     const response = NextResponse.redirect(new URL(returnTo, request.url));
     setSessionCookie(response, session.token, session.expiresAt);
-
-    response.cookies.set("line_oauth_state", "", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 0,
-      path: "/",
-    });
-    response.cookies.set("line_oauth_return_to", "", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "lax",
-      maxAge: 0,
-      path: "/",
-    });
+    applyPendingStateCookie(response, remainingStates);
 
     return response;
   } catch (error) {

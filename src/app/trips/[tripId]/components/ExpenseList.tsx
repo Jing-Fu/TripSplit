@@ -1,5 +1,9 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
+import {
+  normalizeExpenseSettlementMode,
+  normalizeExpenseSettlementNote,
+} from "@/lib/expense-settlement";
 import { useLocale } from "@/lib/i18n/context";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { EMPTY_FILTERS, type CustomCategory, type Expense, type ExpenseFilters, type Member } from "./types";
@@ -244,14 +248,18 @@ export function ExpenseList({
                         </p>
                       )}
                       {expense.note && <p className="mt-0.5 text-xs text-gray-400">💬 {expense.note}</p>}
-                      {expense.settlementMode !== "normal" && (
+                      {normalizeExpenseSettlementMode(expense.settlementMode) !== "normal" && (
                         <p className="mt-1 inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-600">
-                          {expense.settlementMode === "exclude"
-                            ? t("expense.settlementExcluded")
-                            : expense.settlementMode === "partial"
-                              ? `部分結算（${expense.settlementNote || "50"}%）`
-                              : expense.settlementMode}
-                          {expense.settlementMode !== "partial" && expense.settlementNote ? `：${expense.settlementNote}` : ""}
+                          {t("expense.settlementExcluded")}
+                          {normalizeExpenseSettlementNote(
+                            expense.settlementMode,
+                            expense.settlementNote
+                          )
+                            ? `：${normalizeExpenseSettlementNote(
+                                expense.settlementMode,
+                                expense.settlementNote
+                              )}`
+                            : ""}
                         </p>
                       )}
                       {expense.receiptUrl && (
@@ -390,15 +398,17 @@ export function ExpenseList({
                       <p className="mt-1 whitespace-pre-wrap text-sm text-gray-700">{previewExpense.note}</p>
                     </div>
                   )}
-                  {previewExpense.settlementMode !== "normal" && (
+                  {normalizeExpenseSettlementMode(previewExpense.settlementMode) !== "normal" && (
                     <p className="inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                      {previewExpense.settlementMode === "exclude"
-                        ? t("expense.settlementExcluded")
-                        : previewExpense.settlementMode === "partial"
-                          ? `部分結算（${previewExpense.settlementNote || "50"}%）`
-                          : previewExpense.settlementMode}
-                      {previewExpense.settlementMode !== "partial" && previewExpense.settlementNote
-                        ? `：${previewExpense.settlementNote}`
+                      {t("expense.settlementExcluded")}
+                      {normalizeExpenseSettlementNote(
+                        previewExpense.settlementMode,
+                        previewExpense.settlementNote
+                      )
+                        ? `：${normalizeExpenseSettlementNote(
+                            previewExpense.settlementMode,
+                            previewExpense.settlementNote
+                          )}`
                         : ""}
                     </p>
                   )}
