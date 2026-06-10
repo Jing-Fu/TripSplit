@@ -23,8 +23,10 @@ function SummaryCard({ label, value, subLabel }: { label: string; value: string;
 
 export function TripSummaryView({ trip, totalExpenses, settlements, customCategories }: TripSummaryViewProps) {
   const { t } = useLocale();
-  const settleableExpenses = trip.expenses.filter((expense) => expense.settlementMode === "normal");
-  const specialExpenses = trip.expenses.filter((expense) => expense.settlementMode !== "normal");
+  const settleableExpenses = trip.expenses.filter(
+    (expense) => expense.settlementMode === "normal" || expense.settlementMode === "partial"
+  );
+  const specialExpenses = trip.expenses.filter((expense) => expense.settlementMode === "exclude");
 
   const payerTotals = trip.members.map((member) => ({
     member,

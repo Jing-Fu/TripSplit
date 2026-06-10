@@ -328,7 +328,6 @@ export function AddExpenseForm({
           >
             <option value="normal">{t("expense.settlementNormal")}</option>
             <option value="exclude">{t("expense.settlementExclude")}</option>
-            <option value="external">{t("expense.settlementExternalOption")}</option>
             <option value="partial">部分納入結算（自訂比例）</option>
           </select>
           {form.settlementMode !== "normal" && (
@@ -384,7 +383,7 @@ export function AddExpenseForm({
           ))}
         </div>
 
-        {(form.splitType === "exact" || form.splitType === "percentage") && (
+        {form.splitType === "exact" && (
           <div className="space-y-2">
             {members.map((member) => (
               <div key={member.id} className="flex items-center gap-3">
@@ -394,11 +393,10 @@ export function AddExpenseForm({
                   step="0.01"
                   value={customSplits[member.id] || ""}
                   onChange={(e) => setCustomSplits((prev) => ({ ...prev, [member.id]: e.target.value }))}
-                   placeholder={form.splitType === "percentage" ? "%" : t("expense.exactAmount")}
+                  placeholder={t("expense.exactAmount")}
                   className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-300"
                   inputMode="decimal"
                 />
-                {form.splitType === "percentage" && <span className="text-sm text-gray-400">%</span>}
               </div>
             ))}
           </div>

@@ -7,11 +7,11 @@ export const createExpenseSchema = z.object({
   category: z.string().min(1, "請選擇類別"),
   description: z.string().min(1, "請輸入說明").max(200, "說明不可超過 200 字"),
   note: z.string().max(500).optional().nullable(),
-  settlementMode: z.enum(["normal", "exclude", "external", "partial"]).default("normal"),
+  settlementMode: z.enum(["normal", "exclude", "partial"]).default("normal"),
   settlementNote: z.string().max(500).optional().nullable(),
   date: z.string().min(1, "請選擇日期"),
   paidById: z.string().min(1, "請選擇付款人"),
-  splitType: z.enum(["equal", "percentage", "exact", "payer_only"]).default("equal"),
+  splitType: z.enum(["equal", "exact", "payer_only"]).default("equal"),
   receiptKey: z.string().optional().nullable(),
   splits: z.array(
     z.object({

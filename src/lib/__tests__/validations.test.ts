@@ -49,6 +49,22 @@ describe("createExpenseSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("rejects removed percentage split type", () => {
+    const result = createExpenseSchema.safeParse({
+      ...valid,
+      splitType: "percentage",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects removed external settlement mode", () => {
+    const result = createExpenseSchema.safeParse({
+      ...valid,
+      settlementMode: "external",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("createTripSchema", () => {

@@ -32,15 +32,6 @@ export function buildSplits(
     return [{ memberId: form.paidById, amount }];
   }
 
-  if (form.splitType === "percentage") {
-    return members
-      .filter((member) => customSplits[member.id] && parseFloat(customSplits[member.id]) > 0)
-      .map((member) => ({
-        memberId: member.id,
-        amount: Math.round(amount * (parseFloat(customSplits[member.id]) / 100) * 100) / 100,
-      }));
-  }
-
   return members
     .filter((member) => customSplits[member.id] && parseFloat(customSplits[member.id]) > 0)
     .map((member) => ({

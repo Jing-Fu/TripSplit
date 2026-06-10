@@ -67,7 +67,8 @@ export function SettlementView({
   const { t } = useLocale();
   const [expandedPersonGroups, setExpandedPersonGroups] = useState<Record<string, boolean>>({});
   const perPerson = members.length > 0 ? totalExpenses / members.length : 0;
-  const specialExpenses = expenses.filter((expense) => expense.settlementMode !== "normal");
+  const excludedExpenses = expenses.filter((expense) => expense.settlementMode === "exclude");
+  const partialExpenses = expenses.filter((expense) => expense.settlementMode === "partial");
   const allPersonGroupsExpanded =
     personSettlementGroups.length > 0 &&
     personSettlementGroups.every((group) => expandedPersonGroups[group.memberId]);
@@ -278,18 +279,18 @@ export function SettlementView({
         </div>
       </div>
 
-      {specialExpenses.length > 0 && (
+      {excludedExpenses.length > 0 && (
         <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm sm:p-5">
           <h3 className="mb-1 text-sm font-medium text-gray-500">{t("settlement.excludedExpensesTitle")}</h3>
           <p className="mb-4 text-xs text-gray-400">{t("settlement.excludedExpensesDescription")}</p>
           <div className="space-y-2">
-            {specialExpenses.map((expense) => (
+            {excludedExpenses.map((expense) => (
               <div key={expense.id} className="rounded-xl border border-amber-100 bg-amber-50/60 px-3 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium text-gray-800">{expense.description}</p>
                     <p className="mt-1 text-xs text-gray-500">
-                       {expense.paidBy.name} · {expense.settlementMode === "exclude" ? t("expense.settlementExclude") : expense.settlementMode === "partial" ? `部分結算（${expense.settlementNote || "50"}%）` : t("expense.settlementExternalOption")}
+                      {expense.paidBy.name} · {t("expense.settlementExclude")}
                      </p>
                      {expense.settlementNote && (
                        <p className="mt-1 text-xs text-amber-700">
@@ -298,6 +299,30 @@ export function SettlementView({
                      )}
                   </div>
                   <span className="shrink-0 text-sm font-semibold text-amber-700">
+                    {formatCurrency(expense.amount * expense.exchangeRate, currency)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {partialExpenses.length > 0 && (
+        <div className="rounded-2xl border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
+          <h3 className="mb-1 text-sm font-medium text-gray-500">{t("settlement.partialExpensesTitle")}</h3>
+          <p className="mb-4 text-xs text-gray-400">{t("settlement.partialExpensesDescription")}</p>
+          <div className="space-y-2">
+            {partialExpenses.map((expense) => (
+              <div key={expense.id} className="rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{expense.description}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {expense.paidBy.name} · 部分結算（{expense.settlementNote || "50"}%）
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold text-sky-700">
                     {formatCurrency(expense.amount * expense.exchangeRate, currency)}
                   </span>
                 </div>

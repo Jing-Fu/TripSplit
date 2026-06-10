@@ -8,6 +8,30 @@ import { formatZodErrors, importTripSchema } from "@/lib/validations";
 
 type ImportPayload = z.infer<typeof importTripSchema>;
 
+function normalizeSettlementMode(mode?: string) {
+  if (mode === "external") {
+    return "exclude";
+  }
+
+  if (mode === "partial" || mode === "exclude") {
+    return mode;
+  }
+
+  return "normal";
+}
+
+function normalizeSplitType(splitType?: string) {
+  if (splitType === "payer_only" || splitType === "exact") {
+    return splitType;
+  }
+
+  if (splitType === "percentage") {
+    return "exact";
+  }
+
+  return "equal";
+}
+
 export async function POST(request: Request) {
   const { user, error } = await requireUser(request);
   if (error || !user) return error;
@@ -75,11 +99,11 @@ export async function POST(request: Request) {
           exchangeRate: expense.exchangeRate || 1,
           category: expense.category || "other",
           note: expense.note || null,
-          settlementMode: expense.settlementMode || "normal",
+          settlementMode: normalizeSettlementMode(expense.settlementMode),
           settlementNote: expense.settlementNote || null,
           date: new Date(expense.date),
           paidById,
-          splitType: expense.splitType || "equal",
+          splitType: normalizeSplitType(expense.splitType),
           createdById: user.id,
           splits: {
             create: (expense.splits || [])

@@ -235,10 +235,6 @@ function formatSettlementMode(mode: string, note: string | null) {
     return note ? `保留記帳，不納入結算（${note}）` : "保留記帳，不納入結算";
   }
 
-  if (mode === "external") {
-    return note ? `已線下處理 / 私人支出（${note}）` : "已線下處理 / 私人支出";
-  }
-
   if (mode === "partial") {
     return `部分納入結算（${note || "50"}%）`;
   }

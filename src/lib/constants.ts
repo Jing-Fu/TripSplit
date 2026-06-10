@@ -33,7 +33,6 @@ export type CurrencyCode = (typeof CURRENCIES)[number]["code"];
 
 export const SPLIT_TYPES = [
   { value: "equal", label: "平均分攤" },
-  { value: "percentage", label: "按比例" },
   { value: "exact", label: "自訂金額" },
   { value: "payer_only", label: "付款人自付" },
 ] as const;

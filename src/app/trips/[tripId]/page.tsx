@@ -346,22 +346,18 @@ export default function TripDetailPage() {
       category: expense.category,
       description: expense.description,
       note: expense.note || "",
-      settlementMode: expense.settlementMode || "normal",
+      settlementMode: expense.settlementMode === "external" ? "exclude" : expense.settlementMode || "normal",
       settlementNote: expense.settlementNote || "",
       date: formatDateForInput(expense.date),
       paidById: expense.paidBy.id,
-      splitType: expense.splitType,
+      splitType: expense.splitType === "percentage" ? "exact" : expense.splitType,
       receiptKey: expense.receiptKey || "",
       receiptUrl: expense.receiptUrl || "",
       exchangeRate: String(expense.exchangeRate),
     });
     setCustomSplits(
       expense.splits.reduce<Record<string, string>>((acc, split) => {
-        if (expense.splitType === "percentage") {
-          acc[split.member.id] = ((split.amount / expense.amount) * 100).toFixed(2);
-        } else {
-          acc[split.member.id] = String(split.amount);
-        }
+        acc[split.member.id] = String(split.amount);
         return acc;
       }, {})
     );

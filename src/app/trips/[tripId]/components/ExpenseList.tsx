@@ -83,7 +83,6 @@ export function ExpenseList({
   const getSplitTypeLabel = (splitType: string) => {
     const labels: Record<string, string> = {
       equal: t("expense.splitEqual"),
-      percentage: t("expense.splitPercentage"),
       exact: t("expense.splitExact"),
       payer_only: t("expense.splitPayerOnly"),
     };
@@ -251,7 +250,7 @@ export function ExpenseList({
                             ? t("expense.settlementExcluded")
                             : expense.settlementMode === "partial"
                               ? `部分結算（${expense.settlementNote || "50"}%）`
-                              : t("expense.settlementExternal")}
+                              : expense.settlementMode}
                           {expense.settlementMode !== "partial" && expense.settlementNote ? `：${expense.settlementNote}` : ""}
                         </p>
                       )}
@@ -397,7 +396,7 @@ export function ExpenseList({
                         ? t("expense.settlementExcluded")
                         : previewExpense.settlementMode === "partial"
                           ? `部分結算（${previewExpense.settlementNote || "50"}%）`
-                          : t("expense.settlementExternal")}
+                          : previewExpense.settlementMode}
                       {previewExpense.settlementMode !== "partial" && previewExpense.settlementNote
                         ? `：${previewExpense.settlementNote}`
                         : ""}
