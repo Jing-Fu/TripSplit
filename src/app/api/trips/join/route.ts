@@ -34,29 +34,18 @@ export async function POST(request: Request) {
   const existingMember = trip.members.find((member) => member.userId === user.id);
 
   if (!existingMember) {
-    const claimableMember = trip.members.find(
-      (member) => !member.userId && member.name === user.name
+    const memberName = getAvailableName(
+      user.name,
+      trip.members.map((member) => member.name)
     );
 
-    if (claimableMember) {
-      await prisma.member.update({
-        where: { id: claimableMember.id },
-        data: { userId: user.id },
-      });
-    } else {
-      const memberName = getAvailableName(
-        user.name,
-        trip.members.map((member) => member.name)
-      );
-
-      await prisma.member.create({
-        data: {
-          tripId: trip.id,
-          userId: user.id,
-          name: memberName,
-        },
-      });
-    }
+    await prisma.member.create({
+      data: {
+        tripId: trip.id,
+        userId: user.id,
+        name: memberName,
+      },
+    });
   }
 
   if (!trip.ownerId) {

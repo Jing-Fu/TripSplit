@@ -5,6 +5,10 @@ export function generateInviteCode(): string {
   return nanoid(8);
 }
 
+export function generateMemberClaimToken(): string {
+  return nanoid(16);
+}
+
 export function formatCurrency(amount: number, currency: string): string {
   const formatter = new Intl.NumberFormat("zh-TW", {
     style: "currency",
@@ -53,4 +57,12 @@ export function getAvailableName(
   }
 
   return `${baseName} ${suffix}`;
+}
+
+export function sanitizeReturnToPath(value: string | null | undefined): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/";
+  }
+
+  return value;
 }

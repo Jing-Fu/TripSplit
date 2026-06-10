@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { serializePrisma } from "@/lib/prisma-json";
 import { requireUser } from "@/lib/auth";
-import { generateInviteCode, getAvailableName } from "@/lib/utils";
+import { generateInviteCode, generateMemberClaimToken, getAvailableName } from "@/lib/utils";
 import { createTripSchema, formatZodErrors } from "@/lib/validations";
 
 export async function GET(request: Request) {
@@ -73,7 +73,10 @@ export async function POST(request: Request) {
     },
     ...requestedMembers
       .filter((memberName: string) => memberName !== creatorMemberName)
-      .map((memberName: string) => ({ name: memberName })),
+      .map((memberName: string) => ({
+        name: memberName,
+        claimToken: generateMemberClaimToken(),
+      })),
   ];
 
   const trip = await prisma.trip.create({

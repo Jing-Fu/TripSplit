@@ -10,6 +10,7 @@ export type Member = {
   id: string;
   name: string;
   userId: string | null;
+  claimToken?: string | null;
   user?: User | null;
 };
 

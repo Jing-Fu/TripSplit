@@ -5,15 +5,19 @@ import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const [error, setError] = useState("");
+  const [lineLoginUrl, setLineLoginUrl] = useState("/api/auth/line/oauth/start");
 
   useEffect(() => {
-    const message = new URLSearchParams(window.location.search).get("error");
+    const params = new URLSearchParams(window.location.search);
+    const message = params.get("error");
+    const returnTo = params.get("returnTo");
     if (message) {
       setError(decodeURIComponent(message));
     }
+    if (returnTo) {
+      setLineLoginUrl(`/api/auth/line/oauth/start?returnTo=${encodeURIComponent(returnTo)}`);
+    }
   }, []);
-
-  const lineLoginUrl = "/api/auth/line/oauth/start";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50 px-4 py-10">

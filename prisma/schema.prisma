@@ -91,6 +91,7 @@ model Member {
   name      String
   tripId    String
   userId    String?
+  claimToken String? @unique
   createdAt DateTime @default(now())
 
   trip              Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)

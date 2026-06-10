@@ -16,7 +16,7 @@ export function TripHeader({ trip, showInvite, onToggleInvite, onDeleteTrip }: T
   return (
     <header className="sticky top-0 z-10 border-b border-primary-100 bg-white/80 backdrop-blur-sm">
       <div className="mx-auto max-w-4xl px-4 py-3 sm:py-4">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 sm:items-center">
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <Link href="/" className="shrink-0 text-gray-400 transition-colors hover:text-gray-600">
               ←
@@ -29,6 +29,9 @@ export function TripHeader({ trip, showInvite, onToggleInvite, onDeleteTrip }: T
                 {formatDate(trip.startDate)}
                 {trip.endDate && ` ~ ${formatDate(trip.endDate)}`}
               </p>
+              <p className="mt-1 text-[11px] text-gray-400 sm:hidden">
+                {t("trip.currentIdentity").replace("{name}", trip.currentUser.name)}
+              </p>
               <p className="hidden text-xs text-gray-400 sm:block">
                 {t("trip.owner").replace("{name}", trip.owner?.name || t("trip.ownerUnclaimed"))} · {" "}
                 {t("trip.currentIdentity").replace("{name}", trip.currentUser.name)}
@@ -36,7 +39,7 @@ export function TripHeader({ trip, showInvite, onToggleInvite, onDeleteTrip }: T
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2 self-start">
             <button
               onClick={onToggleInvite}
               className="rounded-xl bg-accent-50 px-2.5 py-1.5 text-xs text-accent-600 transition-colors hover:bg-accent-100 sm:px-3 sm:text-sm"
@@ -55,17 +58,20 @@ export function TripHeader({ trip, showInvite, onToggleInvite, onDeleteTrip }: T
         </div>
 
         {showInvite && (
-          <div className="mt-3 flex items-center gap-3 rounded-xl bg-accent-50 p-3">
-            <span className="text-sm text-accent-700">{t("trip.inviteCode")}</span>
-            <code className="rounded-lg bg-white px-3 py-1 font-mono text-lg font-bold text-accent-700">
-              {trip.inviteCode}
-            </code>
-            <button
-              onClick={() => navigator.clipboard.writeText(trip.inviteCode)}
-              className="text-sm text-accent-500 hover:text-accent-700"
-            >
-              📋 {t("common.copy")}
-            </button>
+          <div className="mt-3 rounded-xl bg-accent-50 p-3">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <span className="text-sm text-accent-700">{t("trip.inviteCode")}</span>
+              <code className="break-all rounded-lg bg-white px-3 py-1 font-mono text-base font-bold text-accent-700 sm:text-lg">
+                {trip.inviteCode}
+              </code>
+              <button
+                onClick={() => navigator.clipboard.writeText(trip.inviteCode)}
+                className="text-sm text-accent-500 hover:text-accent-700"
+              >
+                📋 {t("common.copy")}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-accent-700">{t("trip.inviteHint")}</p>
           </div>
         )}
       </div>

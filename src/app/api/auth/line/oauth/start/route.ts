@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
+import { sanitizeReturnToPath } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "LINE Login not configured" }, { status: 500 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const returnTo = sanitizeReturnToPath(searchParams.get("returnTo"));
   const state = nanoid(32);
   const nonce = nanoid(16);
 
@@ -28,6 +31,13 @@ export async function GET(request: Request) {
   );
 
   response.cookies.set("line_oauth_state", state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 600,
+    path: "/",
+  });
+  response.cookies.set("line_oauth_return_to", returnTo, {
     httpOnly: true,
     secure: true,
     sameSite: "lax",

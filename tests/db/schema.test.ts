@@ -6,6 +6,7 @@ const paymentMethodModel = Prisma.dmmf.datamodel.models.find((model) => model.na
 const expenseModel = Prisma.dmmf.datamodel.models.find((model) => model.name === 'Expense')
 const backupRecordModel = Prisma.dmmf.datamodel.models.find((model) => model.name === 'BackupRecord')
 const settlementReminderModel = Prisma.dmmf.datamodel.models.find((model) => model.name === 'SettlementReminder')
+const memberModel = Prisma.dmmf.datamodel.models.find((model) => model.name === 'Member')
 
 describe('prisma schema', () => {
   it('defines LINE user fields on User', () => {
@@ -31,5 +32,9 @@ describe('prisma schema', () => {
   it('defines one settlement reminder per trip and user', () => {
     expect(settlementReminderModel).toBeDefined()
     expect(settlementReminderModel?.uniqueFields).toContainEqual(['tripId', 'userId'])
+  })
+
+  it('stores a dedicated claim token for unclaimed members', () => {
+    expect(memberModel?.fields.some((field) => field.name === 'claimToken' && field.type === 'String' && field.isUnique)).toBe(true)
   })
 })

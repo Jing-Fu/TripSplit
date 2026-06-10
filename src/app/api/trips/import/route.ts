@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordSideEffects } from "@/lib/side-effects";
-import { generateInviteCode, getAvailableName } from "@/lib/utils";
+import { generateInviteCode, generateMemberClaimToken, getAvailableName } from "@/lib/utils";
 import { formatZodErrors, importTripSchema } from "@/lib/validations";
 
 type ImportPayload = z.infer<typeof importTripSchema>;
@@ -70,12 +70,13 @@ export async function POST(request: Request) {
         coverEmoji: payload.trip?.coverEmoji || "✈️",
         inviteCode: generateInviteCode(),
         ownerId: user.id,
-        members: {
-          create: normalizedMemberNames.map((name, index) => ({
-            name,
-            ...(index === 0 ? { userId: user.id } : {}),
-          })),
-        },
+      members: {
+        create: normalizedMemberNames.map((name, index) => ({
+          name,
+          ...(index === 0 ? { userId: user.id } : {}),
+          ...(index === 0 ? {} : { claimToken: generateMemberClaimToken() }),
+        })),
+      },
       },
       include: { members: true },
     });

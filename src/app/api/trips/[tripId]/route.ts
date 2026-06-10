@@ -51,6 +51,10 @@ export async function GET(
   }
 
   const currentMember = trip.members.find((member) => member.userId === user.id) ?? null;
+  const members = trip.members.map((member) => ({
+    ...member,
+    claimToken: trip.ownerId === user.id ? member.claimToken : null,
+  }));
   const expenses = await Promise.all(
     trip.expenses.map(async (expense) => ({
       ...expense,
@@ -62,6 +66,7 @@ export async function GET(
 
   return NextResponse.json(serializePrisma({
     ...trip,
+    members,
     expenses,
     permissions: {
       isOwner: trip.ownerId === user.id,

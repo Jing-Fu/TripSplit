@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forbidden, requireUser } from "@/lib/auth";
-import { getAvailableName } from "@/lib/utils";
+import { generateMemberClaimToken, getAvailableName } from "@/lib/utils";
 import { recordSideEffects } from "@/lib/side-effects";
 import { createMemberSchema, formatZodErrors } from "@/lib/validations";
 
@@ -42,7 +42,7 @@ export async function POST(
   );
 
   const member = await prisma.member.create({
-    data: { name, tripId: params.tripId },
+    data: { name, tripId: params.tripId, claimToken: generateMemberClaimToken() },
   });
 
   await recordSideEffects({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSessionForLineUser, setSessionCookie } from "@/lib/auth";
+import { sanitizeReturnToPath } from "@/lib/utils";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,9 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get("code");
     const state = searchParams.get("state");
     const storedState = request.cookies.get("line_oauth_state")?.value;
+    const returnTo = sanitizeReturnToPath(
+      request.cookies.get("line_oauth_return_to")?.value
+    );
 
     if (!state || !storedState || state !== storedState) {
       return redirectToLoginWithError(request, "state_mismatch");
@@ -86,10 +90,17 @@ export async function GET(request: NextRequest) {
       picture: profile.pictureUrl,
     });
 
-    const response = NextResponse.redirect(new URL("/", request.url));
+    const response = NextResponse.redirect(new URL(returnTo, request.url));
     setSessionCookie(response, session.token, session.expiresAt);
 
     response.cookies.set("line_oauth_state", "", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 0,
+      path: "/",
+    });
+    response.cookies.set("line_oauth_return_to", "", {
       httpOnly: true,
       secure: true,
       sameSite: "lax",

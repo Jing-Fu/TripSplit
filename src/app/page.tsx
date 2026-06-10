@@ -282,7 +282,7 @@ export default function HomePage() {
           <h2 className="mb-3 text-lg font-semibold text-gray-700">
             {t("home.joinByInvite")}
           </h2>
-          <div className="flex gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <input
               type="text"
               value={joinCode}
