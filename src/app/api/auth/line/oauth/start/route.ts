@@ -17,7 +17,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "LINE Login not configured" }, { status: 500 });
   }
 
-  const { searchParams } = new URL(request.url);
+  const requestUrl = new URL(request.url);
+  const redirectUrl = new URL(redirectUri);
+
+  if (requestUrl.origin !== redirectUrl.origin) {
+    const alignedStartUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, redirectUrl.origin);
+    return NextResponse.redirect(alignedStartUrl);
+  }
+
+  const { searchParams } = requestUrl;
   const returnTo = sanitizeReturnToPath(searchParams.get("returnTo"));
   const state = nanoid(32);
   const nonce = nanoid(16);
