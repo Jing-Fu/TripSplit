@@ -31,7 +31,7 @@ import { StatsView } from "./components/StatsView";
 import { TabNavigation } from "./components/TabNavigation";
 import { TripHeader } from "./components/TripHeader";
 import { TripSummaryView } from "./components/TripSummaryView";
-import { exportSettlementImage, exportSettlementPDF } from "./components/settlementExports";
+import { exportSettlementPDF } from "./components/settlementExports";
 import {
   EMPTY_FILTERS,
   type ActivityLog,
@@ -486,11 +486,6 @@ export default function TripDetailPage() {
     await exportSettlementPDF({ trip, totalExpenses, suggestedSettlements, personSettlementGroups });
   };
 
-  const exportSettlementScreenshot = async () => {
-    if (!trip) return;
-    await exportSettlementImage({ trip, totalExpenses, suggestedSettlements });
-  };
-
   const triggerBackup = async () => {
     setBackingUp(true);
     const res = await safeFetch(`/api/trips/${tripId}/backup`, { method: "POST" });
@@ -700,6 +695,7 @@ export default function TripDetailPage() {
                 settlements={suggestedSettlements}
                 pairwiseBreakdowns={pairwiseBreakdowns}
                 personSettlementGroups={personSettlementGroups}
+                currentMemberId={trip.currentMemberId}
                 expandedBreakdowns={expandedBreakdowns}
                 onToggleBreakdown={(key) => setExpandedBreakdowns((prev) => ({ ...prev, [key]: !prev[key] }))}
                 onMarkPaid={markSettlementPaid}
@@ -709,7 +705,6 @@ export default function TripDetailPage() {
                 onExportJSON={exportJSON}
                 onExportCSV={exportCSV}
                 onExportPDF={exportPDF}
-                onExportImage={exportSettlementScreenshot}
                 customCategories={customCategories}
                 canExportToNotion={trip.permissions.isOwner}
                 exportingToNotion={exportingToNotion}

@@ -22,6 +22,7 @@ type SettlementViewProps = {
   settlements: SuggestedSettlement[];
   pairwiseBreakdowns: PairwiseBreakdown[];
   personSettlementGroups: ReturnType<typeof calculatePersonSettlementGroups>;
+  currentMemberId: string | null;
   expandedBreakdowns: Record<string, boolean>;
   onToggleBreakdown: (key: string) => void;
   onMarkPaid: (settlement: SuggestedSettlement) => void;
@@ -31,7 +32,6 @@ type SettlementViewProps = {
   onExportJSON: () => void;
   onExportCSV: () => void;
   onExportPDF: () => void;
-  onExportImage: () => void;
   customCategories: CustomCategory[];
   canExportToNotion: boolean;
   exportingToNotion: boolean;
@@ -50,6 +50,7 @@ export function SettlementView({
   settlements,
   pairwiseBreakdowns,
   personSettlementGroups,
+  currentMemberId,
   expandedBreakdowns,
   onToggleBreakdown,
   onMarkPaid,
@@ -59,7 +60,6 @@ export function SettlementView({
   onExportJSON,
   onExportCSV,
   onExportPDF,
-  onExportImage,
   customCategories,
   canExportToNotion,
   exportingToNotion,
@@ -135,12 +135,6 @@ export function SettlementView({
               📑 PDF
             </button>
             <button
-              onClick={onExportImage}
-              className="rounded-xl border border-pink-200 px-3 py-2 text-xs font-medium text-pink-600 transition-colors hover:bg-pink-50 sm:text-sm"
-            >
-              🖼️ 圖片
-            </button>
-            <button
               onClick={onExportJSON}
               className="rounded-xl border border-accent-200 px-3 py-2 text-xs font-medium text-accent-600 transition-colors hover:bg-accent-50 sm:text-sm"
             >
@@ -176,6 +170,7 @@ export function SettlementView({
               const pairwise = pairwiseBreakdowns.find(
                 (item) => item.fromMemberId === settlement.fromMemberId && item.toMemberId === settlement.toMemberId
               );
+              const canMarkPaid = canCompleteSettlement || currentMemberId === settlement.fromMemberId;
 
               return (
                 <div key={paymentKey} className="rounded-xl border border-gray-100 px-3 py-3 sm:px-4">
@@ -192,13 +187,15 @@ export function SettlementView({
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="font-bold text-primary-600">{formatCurrency(settlement.amount, currency)}</span>
-                      <button
-                        onClick={() => onMarkPaid(settlement)}
-                        disabled={processingPayment === paymentKey}
-                        className="rounded-xl bg-primary-500 px-3 py-2 text-sm text-white transition-colors hover:bg-primary-600 active:bg-primary-700 disabled:bg-primary-300"
-                      >
-                         {processingPayment === paymentKey ? t("common.processing") : t("settlement.markPaid")}
-                      </button>
+                      {canMarkPaid && (
+                        <button
+                          onClick={() => onMarkPaid(settlement)}
+                          disabled={processingPayment === paymentKey}
+                          className="rounded-xl bg-primary-500 px-3 py-2 text-sm text-white transition-colors hover:bg-primary-600 active:bg-primary-700 disabled:bg-primary-300"
+                        >
+                           {processingPayment === paymentKey ? t("common.processing") : t("settlement.markPaid")}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -463,50 +460,6 @@ export function SettlementView({
             ))}
           </div>
         )}
-      </div>
-
-      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
-        <h3 className="mb-4 text-sm font-medium text-gray-500">📋 個人花費明細</h3>
-        <div className="space-y-2">
-          {members.map((member) => {
-            const paid = expenses
-              .filter((expense) => expense.paidBy.id === member.id)
-              .reduce((sum, expense) => sum + expense.amount * expense.exchangeRate, 0);
-            const owed = expenses.reduce((sum, expense) => {
-              const split = expense.splits.find((item) => item.member.id === member.id);
-              return sum + (split ? split.amount * expense.exchangeRate : 0);
-            }, 0);
-            const balance = paid - owed;
-
-            return (
-              <div key={member.id} className="flex items-center justify-between py-2">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-accent-100 text-xs font-medium text-accent-700">
-                    {member.name[0]}
-                  </span>
-                  <span className="text-gray-700">{member.name}</span>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-xs text-gray-400 sm:text-sm">
-                    付 {formatCurrency(paid, currency)} / 分攤 {formatCurrency(owed, currency)}
-                  </p>
-                  <p
-                    className={`text-xs font-medium sm:text-sm ${
-                      balance > 0 ? "text-green-600" : balance < 0 ? "text-red-500" : "text-gray-400"
-                    }`}
-                  >
-                    {balance > 0
-                      ? `可收回 ${formatCurrency(balance, currency)}`
-                      : balance < 0
-                        ? `需付出 ${formatCurrency(-balance, currency)}`
-                        : "已平帳"}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUser } from "@/lib/auth";
+import { forbidden, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordSideEffects } from "@/lib/side-effects";
 import { uploadObject } from "@/lib/storage";
@@ -39,6 +39,10 @@ export async function POST(
 
   if (!trip) {
     return NextResponse.json({ error: "找不到此旅程" }, { status: 404 });
+  }
+
+  if (trip.ownerId !== user.id) {
+    return forbidden("只有旅程建立者可以建立伺服器備份");
   }
 
   const payload = buildTripExportJSON(trip);

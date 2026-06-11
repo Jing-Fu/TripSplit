@@ -43,6 +43,10 @@ export async function POST(
     return NextResponse.json({ error: "付款雙方必須屬於此旅程" }, { status: 400 });
   }
 
+  if (trip.ownerId !== user.id && currentMember?.id !== result.data.fromMemberId) {
+    return forbidden("只有付款本人或旅程建立者可以標記付款");
+  }
+
   const payment = await prisma.settlementPayment.create({
     data: {
       tripId: params.tripId,

@@ -5,6 +5,7 @@ import { forbidden, requireUser } from "@/lib/auth";
 import { recordSideEffects } from "@/lib/side-effects";
 import { deleteObject, isReceiptStorageKey, isReceiptStorageKeyForUser } from "@/lib/storage";
 import { formatZodErrors, updateExpenseSchema } from "@/lib/validations";
+import { validateExpenseSplitTotal } from "@/lib/expense-splits";
 
 async function canManageExpense(userId: string, expenseId: string) {
   const expense = await prisma.expense.findUnique({
@@ -12,6 +13,7 @@ async function canManageExpense(userId: string, expenseId: string) {
     include: {
       trip: true,
       paidBy: true,
+      splits: true,
     },
   });
 
@@ -95,7 +97,8 @@ export async function PATCH(
     return forbidden("你只能把費用掛在自己的身份下，除非你是旅程建立者");
   }
 
-  const splitPayload = Array.isArray(splits) ? splits : [];
+  const shouldUpdateSplits = splits !== undefined;
+  const splitPayload = splits ?? [];
   const validSplitMemberIds = new Set(trip.members.map((member) => member.id));
 
   if (
@@ -107,12 +110,31 @@ export async function PATCH(
     return NextResponse.json({ error: "分攤對象必須是旅程成員" }, { status: 400 });
   }
 
+  if (amount !== undefined || shouldUpdateSplits) {
+    const splitsForValidation = shouldUpdateSplits
+      ? splitPayload
+      : permission.expense.splits.map((split) => ({
+          memberId: split.memberId,
+          amount: Number(split.amount),
+        }));
+    const splitTotalError = validateExpenseSplitTotal(
+      amount ?? Number(permission.expense.amount),
+      splitsForValidation
+    );
+
+    if (splitTotalError) {
+      return NextResponse.json({ error: splitTotalError }, { status: 400 });
+    }
+  }
+
   if (receiptKey && !isReceiptStorageKeyForUser(receiptKey, user.id)) {
     return NextResponse.json({ error: "收據檔案不屬於目前使用者" }, { status: 400 });
   }
 
   const expense = await prisma.$transaction(async (tx) => {
-    await tx.split.deleteMany({ where: { expenseId: params.expenseId } });
+    if (shouldUpdateSplits) {
+      await tx.split.deleteMany({ where: { expenseId: params.expenseId } });
+    }
 
     return tx.expense.update({
       where: { id: params.expenseId },
@@ -129,7 +151,7 @@ export async function PATCH(
         ...(receiptKey !== undefined && { receiptKey: receiptKey || null }),
         ...(settlementMode && { settlementMode }),
         ...(settlementNote !== undefined && { settlementNote: settlementNote || null }),
-        ...(splits && {
+        ...(shouldUpdateSplits && {
           splits: {
             create: splitPayload.map(
               (split: { memberId: string; amount: number }) => ({

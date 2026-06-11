@@ -1,4 +1,5 @@
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
+import { splitAmountEvenly } from "@/lib/expense-splits";
 import { formatDateForInput } from "@/lib/utils";
 import type { ExpenseFormState, Member } from "./types";
 
@@ -21,10 +22,10 @@ export function buildSplits(
   const amount = parseFloat(form.amount || "0");
 
   if (form.splitType === "equal") {
-    const perPerson = members.length > 0 ? amount / members.length : 0;
-    return members.map((member) => ({
+    const amounts = splitAmountEvenly(amount, members.length);
+    return members.map((member, index) => ({
       memberId: member.id,
-      amount: Math.round(perPerson * 100) / 100,
+      amount: amounts[index] ?? 0,
     }));
   }
 

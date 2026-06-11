@@ -5,6 +5,7 @@ import { forbidden, requireUser } from "@/lib/auth";
 import { recordSideEffects } from "@/lib/side-effects";
 import { isReceiptStorageKeyForUser } from "@/lib/storage";
 import { createExpenseSchema, formatZodErrors } from "@/lib/validations";
+import { validateExpenseSplitTotal } from "@/lib/expense-splits";
 
 export async function POST(
   request: Request,
@@ -75,6 +76,11 @@ export async function POST(
     )
   ) {
     return NextResponse.json({ error: "分攤對象必須是旅程成員" }, { status: 400 });
+  }
+
+  const splitTotalError = validateExpenseSplitTotal(amount, splitPayload);
+  if (splitTotalError) {
+    return NextResponse.json({ error: splitTotalError }, { status: 400 });
   }
 
   if (receiptKey && !isReceiptStorageKeyForUser(receiptKey, user.id)) {
