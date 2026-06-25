@@ -176,6 +176,8 @@ export const zhTW = {
     exchangeRate: "💱 匯率 ({from} → {to})",
     exchangeRateLookupNetworkFailed: "匯率查詢失敗：網路連線異常，請手動輸入匯率",
     exchangeRateLookupFailed: "匯率查詢失敗，請手動輸入匯率",
+    syncExchangeRate: "同步同幣別品項",
+    syncExchangeRateFailed: "同步匯率失敗，請稍後再試",
     receiptPhoto: "📸 收據照片",
     receiptAlt: "收據",
     receiptUploadPrompt: "點擊上傳收據照片",

@@ -5,8 +5,8 @@ const CACHE_TTL = 60 * 60 * 1000;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const from = searchParams.get("from") || "USD";
-  const to = searchParams.get("to") || "TWD";
+  const from = (searchParams.get("from") || "USD").toUpperCase();
+  const to = (searchParams.get("to") || "TWD").toUpperCase();
   const cacheKey = `${from}_${to}`;
 
   if (CACHE[cacheKey] && Date.now() - CACHE[cacheKey].timestamp < CACHE_TTL) {
@@ -33,13 +33,23 @@ export async function GET(request: Request) {
     CACHE[cacheKey] = { rate, timestamp: Date.now() };
     return NextResponse.json({ rate, from, to, cached: false });
   } catch {
-    const fallbackRates: Record<string, Record<string, number>> = {
-      USD: { TWD: 31.5, JPY: 149.5, KRW: 1350, EUR: 0.92, GBP: 0.79 },
-      TWD: { USD: 0.032, JPY: 4.75, KRW: 42.9, EUR: 0.029, GBP: 0.025 },
-      JPY: { TWD: 0.21, USD: 0.0067, KRW: 9.03, EUR: 0.0062, GBP: 0.0053 },
+    const fallbackRatesToTwd: Record<string, number> = {
+      TWD: 1,
+      USD: 31.5,
+      JPY: 0.21,
+      KRW: 0.0233,
+      EUR: 34.25,
+      GBP: 39.9,
+      CNY: 4.35,
+      HKD: 4.03,
+      SGD: 23.4,
+      THB: 0.86,
+      VND: 0.00124,
     };
 
-    const rate = fallbackRates[from]?.[to];
+    const fromRate = fallbackRatesToTwd[from];
+    const toRate = fallbackRatesToTwd[to];
+    const rate = fromRate && toRate ? fromRate / toRate : undefined;
     if (rate) {
       return NextResponse.json({ rate, from, to, fallback: true });
     }

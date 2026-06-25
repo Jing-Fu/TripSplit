@@ -178,6 +178,8 @@ export const en: Messages = {
     exchangeRate: "💱 Exchange rate ({from} → {to})",
     exchangeRateLookupNetworkFailed: "Exchange rate lookup failed due to a network error. Please enter it manually.",
     exchangeRateLookupFailed: "Exchange rate lookup failed. Please enter it manually.",
+    syncExchangeRate: "Sync same-currency items",
+    syncExchangeRateFailed: "Failed to sync exchange rates. Please try again.",
     receiptPhoto: "📸 Receipt photo",
     receiptAlt: "Receipt",
     receiptUploadPrompt: "Tap to upload a receipt photo",

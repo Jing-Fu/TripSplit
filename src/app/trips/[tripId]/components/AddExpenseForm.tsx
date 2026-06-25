@@ -16,6 +16,8 @@ type AddExpenseFormProps = {
   saving: boolean;
   onSubmit: (e: FormEvent) => void;
   onCancel?: () => void;
+  onSyncExchangeRate?: () => void;
+  syncingExchangeRate?: boolean;
   submitLabel: string;
   onError: (msg: string) => void;
   allCategories: CategoryOption[];
@@ -44,6 +46,8 @@ export function AddExpenseForm({
   saving,
   onSubmit,
   onCancel,
+  onSyncExchangeRate,
+  syncingExchangeRate = false,
   submitLabel,
   onError,
   allCategories,
@@ -386,7 +390,7 @@ export function AddExpenseForm({
           <label className="mb-2 block text-sm font-medium text-gray-600">
             {t("expense.exchangeRate").replace("{from}", form.currency).replace("{to}", tripCurrency)}
           </label>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
               type="number"
               step="0.0001"
@@ -400,6 +404,16 @@ export function AddExpenseForm({
               <span className="text-sm text-gray-500">
                 ≈ {formatCurrency(parseFloat(form.amount) * parseFloat(form.exchangeRate || "1"), tripCurrency)}
               </span>
+            )}
+            {onSyncExchangeRate && (
+              <button
+                type="button"
+                onClick={onSyncExchangeRate}
+                disabled={syncingExchangeRate || !form.exchangeRate}
+                className="rounded-xl border border-primary-200 px-4 py-2.5 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {syncingExchangeRate ? t("common.querying") : t("expense.syncExchangeRate")}
+              </button>
             )}
           </div>
         </div>

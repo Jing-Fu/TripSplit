@@ -57,6 +57,7 @@ export default function TripDetailPage() {
   const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(createDefaultExpenseForm());
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [syncingExchangeRate, setSyncingExchangeRate] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [expandedBreakdowns, setExpandedBreakdowns] = useState<Record<string, boolean>>({});
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
@@ -349,6 +350,43 @@ export default function TripDetailPage() {
     resetExpenseForm();
     setSaving(false);
     setTab("expenses");
+    fetchTrip();
+  };
+
+  const syncExchangeRate = async () => {
+    if (!trip || expenseForm.currency === trip.currency) return;
+
+    const exchangeRate = Number(expenseForm.exchangeRate);
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+      showError(t("expense.syncExchangeRateFailed"));
+      return;
+    }
+
+    setSyncingExchangeRate(true);
+    setError("");
+
+    const res = await safeFetch(`/api/trips/${tripId}/expenses/exchange-rate`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        currency: expenseForm.currency,
+        exchangeRate,
+      }),
+    });
+
+    if (res.status === 0) {
+      showError(t("errors.networkFailed"));
+      setSyncingExchangeRate(false);
+      return;
+    }
+
+    if (!res.ok) {
+      showError(t("expense.syncExchangeRateFailed"));
+      setSyncingExchangeRate(false);
+      return;
+    }
+
+    setSyncingExchangeRate(false);
     fetchTrip();
   };
 
@@ -665,6 +703,8 @@ export default function TripDetailPage() {
               saving={saving}
               onSubmit={submitExpense}
               onCancel={editingExpenseId ? resetExpenseForm : undefined}
+              onSyncExchangeRate={syncExchangeRate}
+              syncingExchangeRate={syncingExchangeRate}
                 submitLabel={editingExpenseId ? t("expense.submitEdit") : t("expense.submitCreate")}
               onError={showError}
               allCategories={allCategories}
