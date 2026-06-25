@@ -56,6 +56,7 @@ export default function TripDetailPage() {
   const [newMember, setNewMember] = useState("");
   const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(createDefaultExpenseForm());
   const [customSplits, setCustomSplits] = useState<Record<string, string>>({});
+  const [splitMemberIds, setSplitMemberIds] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [syncingExchangeRate, setSyncingExchangeRate] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
@@ -264,6 +265,7 @@ export default function TripDetailPage() {
     setEditingExpenseId(null);
     setExpenseForm(createDefaultExpenseForm(trip?.currency || "TWD", trip?.currentMemberId || ""));
     setCustomSplits({});
+    setSplitMemberIds({});
   }, [trip?.currency, trip?.currentMemberId]);
 
   const addMember = async () => {
@@ -317,7 +319,7 @@ export default function TripDetailPage() {
     setSaving(true);
     setError("");
 
-    const splits = buildSplits(expenseForm, trip.members, customSplits);
+    const splits = buildSplits(expenseForm, trip.members, customSplits, splitMemberIds);
     const endpoint = editingExpenseId
       ? `/api/trips/${tripId}/expenses/${editingExpenseId}`
       : `/api/trips/${tripId}/expenses`;
@@ -413,6 +415,16 @@ export default function TripDetailPage() {
     setCustomSplits(
       expense.splits.reduce<Record<string, string>>((acc, split) => {
         acc[split.member.id] = String(split.amount);
+        return acc;
+      }, {})
+    );
+    const splitMemberLookup = expense.splits.reduce<Record<string, boolean>>((acc, split) => {
+      acc[split.member.id] = true;
+      return acc;
+    }, {});
+    setSplitMemberIds(
+      (trip?.members ?? []).reduce<Record<string, boolean>>((acc, member) => {
+        acc[member.id] = Boolean(splitMemberLookup[member.id]);
         return acc;
       }, {})
     );
@@ -700,6 +712,8 @@ export default function TripDetailPage() {
               setForm={setExpenseForm}
               customSplits={customSplits}
               setCustomSplits={setCustomSplits}
+              splitMemberIds={splitMemberIds}
+              setSplitMemberIds={setSplitMemberIds}
               saving={saving}
               onSubmit={submitExpense}
               onCancel={editingExpenseId ? resetExpenseForm : undefined}

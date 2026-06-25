@@ -17,13 +17,15 @@ export function getCategoryInfo(
 export function buildSplits(
   form: ExpenseFormState,
   members: Member[],
-  customSplits: Record<string, string>
+  customSplits: Record<string, string>,
+  splitMemberIds: Record<string, boolean> = {}
 ) {
   const amount = parseFloat(form.amount || "0");
 
   if (form.splitType === "equal") {
-    const amounts = splitAmountEvenly(amount, members.length);
-    return members.map((member, index) => ({
+    const selectedMembers = members.filter((member) => splitMemberIds[member.id] ?? true);
+    const amounts = splitAmountEvenly(amount, selectedMembers.length);
+    return selectedMembers.map((member, index) => ({
       memberId: member.id,
       amount: amounts[index] ?? 0,
     }));

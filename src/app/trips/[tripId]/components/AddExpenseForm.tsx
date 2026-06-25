@@ -13,6 +13,8 @@ type AddExpenseFormProps = {
   setForm: Dispatch<SetStateAction<ExpenseFormState>>;
   customSplits: Record<string, string>;
   setCustomSplits: Dispatch<SetStateAction<Record<string, string>>>;
+  splitMemberIds: Record<string, boolean>;
+  setSplitMemberIds: Dispatch<SetStateAction<Record<string, boolean>>>;
   saving: boolean;
   onSubmit: (e: FormEvent) => void;
   onCancel?: () => void;
@@ -43,6 +45,8 @@ export function AddExpenseForm({
   setForm,
   customSplits,
   setCustomSplits,
+  splitMemberIds,
+  setSplitMemberIds,
   saving,
   onSubmit,
   onCancel,
@@ -364,6 +368,27 @@ export function AddExpenseForm({
             </button>
           ))}
         </div>
+
+        {form.splitType === "equal" && (
+          <div className="space-y-2">
+            {members.map((member) => (
+              <label key={member.id} className="flex items-center gap-3 rounded-xl bg-gray-50 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={splitMemberIds[member.id] ?? true}
+                  onChange={(e) =>
+                    setSplitMemberIds((prev) => ({
+                      ...prev,
+                      [member.id]: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-gray-300 text-accent-500 focus:ring-accent-300"
+                />
+                <span className="truncate text-sm text-gray-600">{member.name}</span>
+              </label>
+            ))}
+          </div>
+        )}
 
         {form.splitType === "exact" && (
           <div className="space-y-2">
