@@ -193,7 +193,56 @@ describe("calculatePairwiseBreakdown", () => {
     );
 
     expect(bobToAlice?.amount).toBe(150);
+    expect(bobToAlice?.originalAmount).toBe(150);
+    expect(bobToAlice?.paidAmount).toBe(0);
+    expect(bobToAlice?.remainingAmount).toBe(150);
     expect(bobToAlice?.items).toHaveLength(2);
+  });
+
+  it("applies completed payments to pairwise and item details", () => {
+    const expenses = [
+      makeExpense({ id: "e1", amount: 200, paidBy: alice, splits: [
+        { id: "s1", amount: 100, member: alice },
+        { id: "s2", amount: 100, member: bob },
+      ]}),
+      makeExpense({ id: "e2", amount: 100, paidBy: alice, splits: [
+        { id: "s3", amount: 50, member: alice },
+        { id: "s4", amount: 50, member: bob },
+      ]}),
+    ];
+    const payments = [
+      {
+        id: "p1",
+        amount: 120,
+        currency: "TWD",
+        note: null,
+        status: "completed",
+        settledAt: "2025-01-02",
+        fromMember: bob,
+        toMember: alice,
+      },
+      {
+        id: "p2",
+        amount: 20,
+        currency: "TWD",
+        note: null,
+        status: "cancelled",
+        settledAt: "2025-01-03",
+        fromMember: bob,
+        toMember: alice,
+      },
+    ];
+
+    const breakdowns = calculatePairwiseBreakdown(expenses, payments);
+    const bobToAlice = breakdowns.find(
+      (breakdown) => breakdown.fromMemberId === "b" && breakdown.toMemberId === "a"
+    );
+
+    expect(bobToAlice?.originalAmount).toBe(150);
+    expect(bobToAlice?.paidAmount).toBe(120);
+    expect(bobToAlice?.remainingAmount).toBe(30);
+    expect(bobToAlice?.amount).toBe(30);
+    expect(bobToAlice?.items.map((item) => item.remainingAmount).sort((a, b) => a - b)).toEqual([0, 30]);
   });
 });
 
@@ -206,6 +255,9 @@ describe("calculatePersonSettlementGroups", () => {
         toMemberId: "a",
         to: "Alice",
         amount: 100,
+        originalAmount: 125,
+        paidAmount: 25,
+        remainingAmount: 100,
         items: [],
       },
       {
@@ -214,6 +266,9 @@ describe("calculatePersonSettlementGroups", () => {
         toMemberId: "a",
         to: "Alice",
         amount: 50,
+        originalAmount: 50,
+        paidAmount: 0,
+        remainingAmount: 50,
         items: [],
       },
     ];
@@ -226,11 +281,13 @@ describe("calculatePersonSettlementGroups", () => {
     const aliceGroup = groups.find((g) => g.memberId === "a");
     expect(aliceGroup?.incoming).toHaveLength(2);
     expect(aliceGroup?.totalToReceive).toBe(150);
+    expect(aliceGroup?.totalPaidToMember).toBe(25);
     expect(aliceGroup?.outgoing).toHaveLength(0);
     expect(aliceGroup?.totalToPay).toBe(0);
 
     const bobGroup = groups.find((g) => g.memberId === "b");
     expect(bobGroup?.outgoing).toHaveLength(1);
     expect(bobGroup?.totalToPay).toBe(100);
+    expect(bobGroup?.totalPaidByMember).toBe(25);
   });
 });

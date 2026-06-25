@@ -232,9 +232,16 @@ export function SettlementView({
                     </p>
                   </div>
                   <div className="flex items-center justify-between gap-3 sm:block sm:text-right">
-                     <p className="text-sm font-semibold text-primary-600">
-                       {t("settlement.subtotal").replace("{amount}", formatCurrency(breakdown.amount, currency))}
-                     </p>
+                    <p className="text-sm font-semibold text-primary-600">
+                      {t("settlement.remainingAmount").replace("{amount}", formatCurrency(breakdown.remainingAmount, currency))}
+                    </p>
+                    {breakdown.paidAmount > 0 && (
+                      <p className="text-xs text-gray-400">
+                        {t("settlement.paymentProgress")
+                          .replace("{original}", formatCurrency(breakdown.originalAmount, currency))
+                          .replace("{paid}", formatCurrency(breakdown.paidAmount, currency))}
+                      </p>
+                    )}
                     <span className="text-sm text-gray-400" aria-hidden="true">
                       {isExpanded ? "▴" : "▾"}
                     </span>
@@ -260,7 +267,14 @@ export function SettlementView({
                             </p>
                           </div>
                           <div className="shrink-0 text-right">
-                            <p className="text-sm font-semibold text-gray-700">{formatCurrency(item.amount, currency)}</p>
+                            <p className="text-sm font-semibold text-gray-700">{formatCurrency(item.remainingAmount, currency)}</p>
+                            {item.paidAmount > 0 && (
+                              <p className="text-xs text-gray-400">
+                                {t("settlement.paymentProgress")
+                                  .replace("{original}", formatCurrency(item.paidAmount + item.remainingAmount, currency))
+                                  .replace("{paid}", formatCurrency(item.paidAmount, currency))}
+                              </p>
+                            )}
                             {item.originalCurrency !== currency && (
                               <p className="text-xs text-gray-400">
                                  {t("settlement.originalSplitAmount").replace(
@@ -358,10 +372,17 @@ export function SettlementView({
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-gray-400">
-                       {t("settlement.toPayAndReceive")
-                         .replace("{pay}", formatCurrency(group.totalToPay, currency))
-                         .replace("{receive}", formatCurrency(group.totalToReceive, currency))}
+                      {t("settlement.toPayAndReceive")
+                        .replace("{pay}", formatCurrency(group.totalToPay, currency))
+                        .replace("{receive}", formatCurrency(group.totalToReceive, currency))}
                     </p>
+                    {(group.totalPaidByMember > 0 || group.totalPaidToMember > 0) && (
+                      <p className="mt-1 text-xs text-gray-400">
+                        {t("settlement.personPaidSummary")
+                          .replace("{paidOut}", formatCurrency(group.totalPaidByMember, currency))
+                          .replace("{paidIn}", formatCurrency(group.totalPaidToMember, currency))}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center justify-between gap-3 sm:justify-end">
                     <div className="flex gap-2">
@@ -389,7 +410,14 @@ export function SettlementView({
                           {group.outgoing.map((item) => (
                             <div key={`${group.memberId}-${item.toMemberId}`} className="rounded-lg bg-white px-3 py-2">
                                <p className="text-sm text-gray-700">{t("settlement.payTo").replace("{name}", item.to)}</p>
-                              <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.amount, currency)}</p>
+                              <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.remainingAmount, currency)}</p>
+                              {item.paidAmount > 0 && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                  {t("settlement.paymentProgress")
+                                    .replace("{original}", formatCurrency(item.originalAmount, currency))
+                                    .replace("{paid}", formatCurrency(item.paidAmount, currency))}
+                                </p>
+                              )}
                               <p className="mt-1 text-xs text-gray-400">{item.items.map((expense) => expense.description).join("、")}</p>
                             </div>
                           ))}
@@ -406,7 +434,14 @@ export function SettlementView({
                           {group.incoming.map((item) => (
                             <div key={`${group.memberId}-${item.fromMemberId}`} className="rounded-lg bg-white px-3 py-2">
                                <p className="text-sm text-gray-700">{t("settlement.collectFrom").replace("{name}", item.from)}</p>
-                              <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.amount, currency)}</p>
+                              <p className="text-sm font-semibold text-gray-800">{formatCurrency(item.remainingAmount, currency)}</p>
+                              {item.paidAmount > 0 && (
+                                <p className="mt-1 text-xs text-gray-400">
+                                  {t("settlement.paymentProgress")
+                                    .replace("{original}", formatCurrency(item.originalAmount, currency))
+                                    .replace("{paid}", formatCurrency(item.paidAmount, currency))}
+                                </p>
+                              )}
                               <p className="mt-1 text-xs text-gray-400">{item.items.map((expense) => expense.description).join("、")}</p>
                             </div>
                           ))}

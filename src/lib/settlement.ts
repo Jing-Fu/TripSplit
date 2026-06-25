@@ -52,6 +52,8 @@ export type SettlementBreakdownItem = {
   category: string;
   date: string;
   amount: number;
+  paidAmount: number;
+  remainingAmount: number;
   originalAmount: number;
   originalCurrency: string;
 };
@@ -62,6 +64,9 @@ export type PairwiseBreakdown = {
   toMemberId: string;
   to: string;
   amount: number;
+  originalAmount: number;
+  paidAmount: number;
+  remainingAmount: number;
   items: SettlementBreakdownItem[];
 };
 
@@ -72,7 +77,30 @@ export type PersonSettlementGroup = {
   incoming: PairwiseBreakdown[];
   totalToPay: number;
   totalToReceive: number;
+  totalPaidByMember: number;
+  totalPaidToMember: number;
 };
+
+function roundCurrency(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function getPaymentKey(fromMemberId: string, toMemberId: string) {
+  return `${fromMemberId}:${toMemberId}`;
+}
+
+function getCompletedPaymentTotals(payments: RecordedSettlementPayment[] = []) {
+  const totals = new Map<string, number>();
+
+  payments
+    .filter((payment) => payment.status === "completed")
+    .forEach((payment) => {
+      const key = getPaymentKey(payment.fromMember.id, payment.toMember.id);
+      totals.set(key, roundCurrency((totals.get(key) ?? 0) + payment.amount));
+    });
+
+  return totals;
+}
 
 export function calculateSuggestedSettlements(
   members: SettlementMember[],
@@ -98,14 +126,11 @@ export function calculateSuggestedSettlements(
     });
   });
 
-  payments
-    .filter((payment) => payment.status === "completed")
-    .forEach((payment) => {
-      balances[payment.fromMember.id] =
-        (balances[payment.fromMember.id] || 0) + payment.amount;
-      balances[payment.toMember.id] =
-        (balances[payment.toMember.id] || 0) - payment.amount;
-    });
+  getCompletedPaymentTotals(payments).forEach((amount, key) => {
+    const [fromMemberId, toMemberId] = key.split(":");
+    balances[fromMemberId] = (balances[fromMemberId] || 0) + amount;
+    balances[toMemberId] = (balances[toMemberId] || 0) - amount;
+  });
 
   const debtors: { id: string; name: string; amount: number }[] = [];
   const creditors: { id: string; name: string; amount: number }[] = [];
@@ -153,12 +178,14 @@ export function calculateSuggestedSettlements(
 }
 
 export function calculatePairwiseBreakdown(
-  expenses: SettlementExpense[]
+  expenses: SettlementExpense[],
+  payments: RecordedSettlementPayment[] = []
 ): PairwiseBreakdown[] {
   const settleableExpenses = expenses.filter((expense) =>
     isExpenseSettleable(expense.settlementMode)
   );
   const breakdownMap = new Map<string, PairwiseBreakdown>();
+  const completedPaymentTotals = getCompletedPaymentTotals(payments);
 
   settleableExpenses.forEach((expense) => {
     expense.splits.forEach((split) => {
@@ -172,20 +199,24 @@ export function calculatePairwiseBreakdown(
         return;
       }
 
-      const key = `${split.member.id}:${expense.paidBy.id}`;
+      const key = getPaymentKey(split.member.id, expense.paidBy.id);
       const item: SettlementBreakdownItem = {
         expenseId: expense.id,
         description: expense.description,
         category: expense.category,
         date: expense.date,
         amount,
+        paidAmount: 0,
+        remainingAmount: amount,
         originalAmount: split.amount,
         originalCurrency: expense.currency,
       };
       const existing = breakdownMap.get(key);
 
       if (existing) {
-        existing.amount = Math.round((existing.amount + amount) * 100) / 100;
+        existing.amount = roundCurrency(existing.amount + amount);
+        existing.originalAmount = roundCurrency(existing.originalAmount + amount);
+        existing.remainingAmount = existing.amount;
         existing.items.push(item);
         return;
       }
@@ -196,19 +227,48 @@ export function calculatePairwiseBreakdown(
         toMemberId: expense.paidBy.id,
         to: expense.paidBy.name,
         amount,
+        originalAmount: amount,
+        paidAmount: 0,
+        remainingAmount: amount,
         items: [item],
       });
     });
   });
 
   return Array.from(breakdownMap.values())
-    .map((entry) => ({
-      ...entry,
-      items: entry.items.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      ),
-    }))
-    .sort((a, b) => b.amount - a.amount);
+    .map((entry) => {
+      const paidAmount = roundCurrency(
+        Math.min(
+          completedPaymentTotals.get(getPaymentKey(entry.fromMemberId, entry.toMemberId)) ?? 0,
+          entry.originalAmount
+        )
+      );
+      let remainingPaidAmount = paidAmount;
+      const items = entry.items
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .map((item) => {
+          const itemPaidAmount = roundCurrency(Math.min(item.amount, remainingPaidAmount));
+          remainingPaidAmount = roundCurrency(remainingPaidAmount - itemPaidAmount);
+          const remainingAmount = roundCurrency(item.amount - itemPaidAmount);
+
+          return {
+            ...item,
+            amount: remainingAmount,
+            paidAmount: itemPaidAmount,
+            remainingAmount,
+          };
+        });
+      const remainingAmount = roundCurrency(entry.originalAmount - paidAmount);
+
+      return {
+        ...entry,
+        amount: remainingAmount,
+        paidAmount,
+        remainingAmount,
+        items,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount || b.originalAmount - a.originalAmount);
 }
 
 export function calculatePersonSettlementGroups(
@@ -230,6 +290,8 @@ export function calculatePersonSettlementGroups(
       incoming,
       totalToPay: outgoing.reduce((sum, item) => sum + item.amount, 0),
       totalToReceive: incoming.reduce((sum, item) => sum + item.amount, 0),
+      totalPaidByMember: outgoing.reduce((sum, item) => sum + item.paidAmount, 0),
+      totalPaidToMember: incoming.reduce((sum, item) => sum + item.paidAmount, 0),
     };
   });
 }
@@ -244,7 +306,9 @@ export function exportSettlementSummaryAsText(
         ? group.outgoing
             .map(
               (item) =>
-                `  - 付給 ${item.to}：${item.amount.toFixed(2)}（${item.items
+                `  - 付給 ${item.to}：剩餘 ${item.remainingAmount.toFixed(2)}（原始 ${item.originalAmount.toFixed(
+                  2
+                )}，已付 ${item.paidAmount.toFixed(2)}；${item.items
                   .map((expense) => expense.description)
                   .join("、")}）`
             )
@@ -256,7 +320,9 @@ export function exportSettlementSummaryAsText(
         ? group.incoming
             .map(
               (item) =>
-                `  - 向 ${item.from} 收款：${item.amount.toFixed(2)}（${item.items
+                `  - 向 ${item.from} 收款：剩餘 ${item.remainingAmount.toFixed(2)}（原始 ${item.originalAmount.toFixed(
+                  2
+                )}，已付 ${item.paidAmount.toFixed(2)}；${item.items
                   .map((expense) => expense.description)
                   .join("、")}）`
             )
@@ -266,8 +332,10 @@ export function exportSettlementSummaryAsText(
     return [
       `${group.memberName}`,
       `待付總額：${group.totalToPay.toFixed(2)}`,
+      `已付出：${group.totalPaidByMember.toFixed(2)}`,
       outgoing,
       `待收總額：${group.totalToReceive.toFixed(2)}`,
+      `已收款：${group.totalPaidToMember.toFixed(2)}`,
       incoming,
     ].join("\n");
   });

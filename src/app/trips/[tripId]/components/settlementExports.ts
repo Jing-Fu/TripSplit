@@ -115,7 +115,13 @@ function buildSettlementPDFContainer({
 
     const totals = document.createElement("p");
     totals.style.cssText = "font-size:14px;color:#4b5563;margin:0 0 12px;";
-    totals.textContent = `應付 ${formatCurrency(group.totalToPay, trip.currency)} · 應收 ${formatCurrency(group.totalToReceive, trip.currency)}`;
+    totals.textContent = `應付 ${formatCurrency(group.totalToPay, trip.currency)} · 應收 ${formatCurrency(
+      group.totalToReceive,
+      trip.currency
+    )} · 已付出 ${formatCurrency(group.totalPaidByMember, trip.currency)} · 已收款 ${formatCurrency(
+      group.totalPaidToMember,
+      trip.currency
+    )}`;
     groupCard.appendChild(totals);
 
     if (group.outgoing.length === 0) {
@@ -130,8 +136,18 @@ function buildSettlementPDFContainer({
 
         const main = document.createElement("p");
         main.style.cssText = "font-size:14px;font-weight:600;margin:0 0 4px;";
-        main.textContent = `支付給 ${item.to}：${formatCurrency(item.amount, trip.currency)}`;
+        main.textContent = `支付給 ${item.to}：剩餘 ${formatCurrency(item.remainingAmount, trip.currency)}`;
         payment.appendChild(main);
+
+        if (item.paidAmount > 0) {
+          const paid = document.createElement("p");
+          paid.style.cssText = "font-size:13px;color:#6b7280;margin:0 0 4px;";
+          paid.textContent = `原始 ${formatCurrency(item.originalAmount, trip.currency)} · 已付 ${formatCurrency(
+            item.paidAmount,
+            trip.currency
+          )}`;
+          payment.appendChild(paid);
+        }
 
         if (item.items.length > 0) {
           const details = document.createElement("p");

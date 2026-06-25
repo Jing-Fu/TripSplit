@@ -218,7 +218,7 @@ export default function TripDetailPage() {
 
   const pairwiseBreakdowns = useMemo(() => {
     if (!trip) return [];
-    return calculatePairwiseBreakdown(trip.expenses);
+    return calculatePairwiseBreakdown(trip.expenses, trip.payments);
   }, [trip]);
 
   const personSettlementGroups = useMemo(() => {
